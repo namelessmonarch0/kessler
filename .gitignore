@@ -9,6 +9,7 @@
 *.mexw32
 *.mexw64
 *.mlpkginstall
+.MATLABDriveTag
 
 # OS generated files
 .DS_Store
