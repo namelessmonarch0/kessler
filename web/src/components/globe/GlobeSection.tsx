@@ -17,19 +17,35 @@ async function fetchGroup(group: "LEO" | "HIGH"): Promise<OrbitRecord[] | null> 
   return gz ? (await loadSnapshot(gz)).records : null;
 }
 
-function Readout() {
-  const [text, setText] = useState("");
+// `live` is true once the <Canvas> is mounted and ticking simClock every frame. Without it (no
+// WebGL, or the probe hasn't resolved yet) nothing ever advances simClock.t past its initial
+// mount value, so the readout would otherwise freeze at page-load time forever; read the real
+// wall clock directly in that case instead.
+function Readout({ live }: { live: boolean }) {
+  const [full, setFull] = useState("");
+  const [short, setShort] = useState("");
   useEffect(() => {
-    const id = window.setInterval(() => {
-      const d = new Date(simClock.now());
+    const update = () => {
+      const d = new Date(live ? simClock.now() : Date.now());
       const s = subsolarPoint(d);
       const lat = `${Math.abs(s.latDeg).toFixed(1)}°${s.latDeg >= 0 ? "N" : "S"}`;
       const lon = `${Math.abs(s.lonDeg).toFixed(1)}°${s.lonDeg >= 0 ? "E" : "W"}`;
-      setText(`${d.toISOString().slice(0, 16).replace("T", " ")} UTC · SUN OVER ${lat} ${lon}`);
-    }, 1000);
+      const iso = d.toISOString();
+      setFull(`${iso.slice(0, 16).replace("T", " ")} UTC · SUN OVER ${lat} ${lon}`);
+      // Shortened form for narrow screens (drops the date and "OVER" so it fits on one line
+      // over the object cloud instead of wrapping/overlapping — see GlobeSection review notes).
+      setShort(`${iso.slice(11, 16)} UTC · SUN ${lat} ${lon}`);
+    };
+    update();
+    const id = window.setInterval(update, 1000);
     return () => window.clearInterval(id);
-  }, []);
-  return <p className="label" aria-live="off">{text}</p>;
+  }, [live]);
+  return (
+    <p className="label [text-shadow:0_1px_3px_rgba(0,0,0,0.85)]" aria-live="off">
+      <span className="hidden sm:inline">{full}</span>
+      <span className="sm:hidden">{short}</span>
+    </p>
+  );
 }
 
 export function GlobeSection() {
@@ -80,7 +96,7 @@ export function GlobeSection() {
         </Canvas>
       )}
       <div className="pointer-events-none absolute left-4 top-3 right-4 flex flex-col gap-1">
-        <Readout />
+        <Readout live={webgl === true} />
         {webgl === false && <p className="text-sm text-ink-2">This device can&apos;t show the 3D globe (WebGL is unavailable). Charts and search still work.</p>}
         {webgl && status === "loading" && <p className="label">Loading orbits…</p>}
         {webgl && status === "missing" && <p className="text-sm text-ink-2">Orbit data not available yet.</p>}
