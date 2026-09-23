@@ -242,10 +242,14 @@ End-to-end answer quality runs when a key is present, with optional LangSmith tr
 - State: a single Zustand store (filters, time, selection, chat) shared by the UI, globe and agent
   commands.
 
-### 6.2 Open (to revisit after the backend)
-Final palette (Classic/Night/Atlas/Mono), dither level and shading (cel vs smooth), whether
-Departure Mono is used everywhere or only for labels, and whether to reconsider a pure-2D globe. Prototypes
-are in `.superpowers/brainstorm/` (globe-sun.html, globe-anime.html, globe-2d-smooth.html).
+### 6.2 Decided 2026-09-23 (were open)
+- **Globe engine:** Three.js via React Three Fiber, styled flat like the 2D mock (no 2D fallback globe).
+- **Palette:** Classic — ocean `#2f6fd6`, land `#7fd06b`, coastline ink `#0d1b2e`.
+- **Shading and dither:** flat day side, darker night side, and a smooth ~18° twilight band drawn with
+  an ordered (Bayer) dither in the Earth shader (as in globe-2d-smooth.html); plus a *subtle* full-screen
+  ordered-dither + grain post-process (cell 2 px, 7 levels, grain 0.09).
+- **Type:** Departure Mono for labels, numbers and headings; Inter Tight for body text and chat answers.
+Prototypes remain in `.superpowers/brainstorm/` (globe-sun.html, globe-anime.html, globe-2d-smooth.html).
 
 ## 7. Error handling
 - API: 422 for invalid filters (readable message); 404 for unknown objects; 503
