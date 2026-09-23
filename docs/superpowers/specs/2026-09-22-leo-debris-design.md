@@ -77,13 +77,17 @@ The portfolio repo (kudayyurter.dev) stays separate and links to the subdomain.
 ## 3. Data
 
 ### 3.1 Sources and licensing
-- **Space-Track.org** (primary). USSPACECOM gives blanket approval to redistribute basic SSA
+- **Source per feed (amended 2026-09-23 after inspecting both feeds):** SATCAT comes from
+  **CelesTrak** `pub/satcat.csv` (primary). It is derived from Space-Track and adds
+  operational status, orbit center and numeric RCS, which Space-Track's `satcat` class lacks. GP comes from
+  **Space-Track** (primary), the only source with elements for the full on-orbit catalog.
+- **Space-Track.org** (primary for GP). USSPACECOM gives blanket approval to redistribute basic SSA
   data (TLE/OMM, SATCAT, decay) **with citation**. Rate limits: under 30 requests/min and under 300/hr.
   Use bulk queries only, with GP polling at a randomized minute. Credentials stay only in
   SSM Parameter Store (SecureString) and are used only by the job Lambdas.
-- **CelesTrak** (fallback). SATCAT and the `active` GP group. It has no full-catalog GP (checked
-  2026-09-22: `GROUP=all` is invalid, and `active` covers only ~15.8k of ~28.6k LEO objects), so it is a
-  fallback only.
+- **CelesTrak.** Primary for SATCAT. For GP it is a fallback only: it has no full-catalog GP (checked
+  2026-09-22: `GROUP=all` is invalid, and `active` covers only ~15.8k of ~28.6k LEO objects). In fallback mode
+  its elements are **upserted** (never a full replace), so debris elements are not lost.
 - Required site-wide attribution: "Data: USSPACECOM via Space-Track.org; CelesTrak."
 
 ### 3.2 Tiers
@@ -95,7 +99,8 @@ The portfolio repo (kudayyurter.dev) stays separate and links to the subdomain.
 Ingest **all** objects and regimes. The UI and agent default to LEO. A regime filter exposes
 MEO/GEO/HEO. Regime rules: LEO = apogee < 2,000 km; GEO = perigee 35,000–36,500 km;
 MEO = perigee ≥ 2,000 km and not GEO; HEO = perigee < 2,000 km and apogee ≥ 2,000 km;
-OTHER = non-Earth-centered or missing orbit data. Analyst objects (NORAD ≥ 80000) are excluded.
+OTHER = non-Earth-centered or missing orbit data. No catalog-number exclusion: the public catalog runs
+1–69,999 and then continues at 100,000+ (Alpha-5/6-digit era; e.g. 100000 is a 2026 payload).
 
 ### 3.4 Schema
 ```
@@ -110,8 +115,8 @@ gp_elements      norad_id PK→objects, epoch, mean_motion, eccentricity, inclin
 owners           code PK, name, country_iso NULL, flag_emoji NULL
 launch_sites     code PK, name, country, lat NULL, lon NULL
 breakup_events   id PK, parent_cospar, name, event_date, kind (ASAT|COLLISION|EXPLOSION|UNKNOWN),
-                 description, source_url                 -- curated seed, ~20 events
-yearly_stats     year, owner, object_type, regime, in_orbit, launched, reentered
+                 description, source_url                 -- curated seed, 10 events in v1
+yearly_stats     year, owner, object_type, regime, in_orbit, added, reentered
                  PK(year, owner, object_type, regime)    -- rebuilt after each ingest
 documents        id, title, source, url, published_at, license
 chunks           id, document_id→, ord, content, embedding vector(384), tsv tsvector,
@@ -123,7 +128,9 @@ rate_limits      key, window_start, count                -- chat limits across i
 ### 3.5 Derived-year rule (key correctness fix)
 `first_seen_year = max(launch_year, catalog_year(norad_id))`. `catalog_year` is the running
 max of payload launch dates ordered by NORAD id, since catalog numbers are assigned in order.
-If `event_id` is set, `first_seen_year = year(event_date)`.
+An object is linked to a breakup event when it is DEB, its `parent_cospar` matches, and its
+catalog year is ≥ the event year; then `first_seen_year = year(event_date)`.
+If `decay_date` is set, `first_seen_year` is clamped to ≤ the decay year (late-cataloged objects).
 **In orbit at the end of year Y** means `first_seen_year ≤ Y AND (decay_date IS NULL OR year(decay_date) > Y)`.
 Validation reference (computed 2026-09-22 from the live SATCAT, LEO only): debris in orbit
 was 4,115 (2006), 6,453 (2007), 8,744 (2009); payloads overtook debris in 2024
@@ -157,7 +164,7 @@ Errors use the shape `{error:{code,message}}`.
 |---|---|---|
 | `GET /meta` | data-as-of timestamps, totals, lists of owners/types/regimes | 10 min |
 | `GET /globe/snapshot?regime=LEO` | packed elements | CDN 6 h |
-| `GET /stats/timeseries` | `metric=in_orbit|launched|reentered`, `group_by=type|owner|regime`, filters `owners,types,regimes,from,to` | 1 h |
+| `GET /stats/timeseries` | `metric=in_orbit|added|reentered`, `group_by=type|owner|regime`, filters `owners,types,regimes,from,to` | 1 h |
 | `GET /stats/breakdown` | `at=YYYY`, `by=owner|type|regime`, filters | 1 h |
 | `GET /stats/distribution` | `field=perigee|apogee|inclination|rcs_size`, filters | 1 h |
 | `GET /events` | breakup events + pieces created / still in orbit | 1 h |
