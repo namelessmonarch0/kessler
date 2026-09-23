@@ -20,7 +20,10 @@ def connect(url: str) -> psycopg.Connection:
 
 class Database:
     def __init__(self, url: str, max_size: int = 4):
-        self.pool = ConnectionPool(url, min_size=0, max_size=max_size, kwargs=CONN_KWARGS, open=True)
+        self.pool = ConnectionPool(
+            url, min_size=0, max_size=max_size, kwargs=CONN_KWARGS, open=True,
+            check=ConnectionPool.check_connection,
+        )
 
     def conn(self) -> Iterator[psycopg.Connection]:
         with self.pool.connection() as c:

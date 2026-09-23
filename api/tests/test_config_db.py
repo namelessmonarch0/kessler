@@ -40,3 +40,27 @@ def test_database_pool_yields_connections(database_url):
     finally:
         gen.close()
         db.close()
+
+
+def test_pool_recovers_after_server_terminates_backend(migrated, conn):
+    """Neon suspends its compute after ~5 min idle, killing pooled backends server-side.
+    The pool must detect and discard a dead connection on checkout, not hand it back out."""
+    db = Database(migrated)
+    try:
+        gen = db.conn()
+        c = next(gen)
+        assert c.execute("SELECT 1 AS one").fetchone() == {"one": 1}
+        gen.close()
+
+        conn.execute(
+            "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+            "WHERE pid <> pg_backend_pid() AND datname = current_database() "
+            "AND usename = current_user"
+        )
+
+        gen2 = db.conn()
+        c2 = next(gen2)
+        assert c2.execute("SELECT 1 AS one").fetchone() == {"one": 1}
+        gen2.close()
+    finally:
+        db.close()
