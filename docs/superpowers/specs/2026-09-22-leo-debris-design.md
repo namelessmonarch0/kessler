@@ -42,7 +42,7 @@ view shows illustrative positions and says so).
 │  • /api/* route handler proxies to AWS (adds origin secret,│
 │    streams SSE through, sets cache headers)                │
 └──────────────────────────┬─────────────────────────────────┘
-┌─ AWS us-east-1 (defined in AWS CDK, Python) ▼──────────────┐
+┌─ AWS us-east-2 (defined in AWS CDK, Python) ▼──────────────┐
 │ Lambda "api" (container image, Function URL,               │
 │   RESPONSE_STREAM): FastAPI via AWS Lambda Web Adapter     │
 │   REST stats/objects/globe endpoints + POST /api/chat      │
@@ -52,7 +52,7 @@ view shows illustrative positions and says so).
 │ S3: globe snapshots · SSM Parameter Store: secrets ·       │
 │ ECR: images · CloudWatch: logs · Budgets: $5 alert         │
 └──────────────────────────┬─────────────────────────────────┘
-┌─ Neon Postgres (free tier, AWS us-east-1) ▼────────────────┐
+┌─ Neon Postgres (free tier, AWS us-east-2) ▼────────────────┐
 │ objects · gp_elements · owners · launch_sites ·            │
 │ breakup_events · yearly_stats · documents · chunks         │
 │ (pgvector) · ingest_runs · rate_limits                     │
@@ -71,7 +71,7 @@ The portfolio repo (kudayyurter.dev) stays separate and links to the subdomain.
   pick a low-cost provider later.
 - Hosting: Vercel (web); **AWS** (Lambda + Function URL, EventBridge Scheduler, S3, SSM
   Parameter Store, ECR, CloudWatch, Budgets), defined as code with **AWS CDK (Python)**;
-  Neon (db, AWS us-east-1 region). Chosen so the AWS bill after the 6-month free plan
+  Neon (db, AWS us-east-2 region). Chosen so the AWS bill after the 6-month free plan
   ends stays around $0–2/month (the account must then be upgraded to a paid plan or AWS closes it).
 
 ## 3. Data
@@ -269,7 +269,7 @@ are in `.superpowers/brainstorm/` (globe-sun.html, globe-anime.html, globe-2d-sm
 - Vercel project for `web/`, domain `leo.kudayyurter.dev`. The owner adds a CNAME
   `leo → cname.vercel-dns.com` at the external registrar. Vercel env: `API_ORIGIN_URL`
   (Function URL), `ORIGIN_SECRET`.
-- AWS (us-east-1), all in one CDK app (`infra/`):
+- AWS (us-east-2), all in one CDK app (`infra/`):
   - ECR repository; a single container image (`api/Dockerfile`, Lambda Web Adapter,
     fastembed model files baked in to avoid cold-start downloads) with different handlers/commands
     for the API and the jobs.
@@ -282,7 +282,7 @@ are in `.superpowers/brainstorm/` (globe-sun.html, globe-anime.html, globe-2d-sm
   - CloudWatch log retention of 14 days; AWS Budgets alert at $5/month.
 - CI/CD: GitHub Actions assumes an IAM role via **OIDC** (no stored AWS keys), builds and pushes
   the image, then runs `cdk deploy`.
-- Neon free tier (0.5 GB; expected usage 60–80 MB), AWS us-east-1 region, pooled connection
+- Neon free tier (0.5 GB; expected usage 60–80 MB), AWS us-east-2 region, pooled connection
   string (Lambda-friendly).
 - Owner one-time setup: AWS account (done) + Budgets alert confirmation, CDK bootstrap,
   Neon account, DNS record. Step-by-step instructions are included in the plan.
