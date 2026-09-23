@@ -97,6 +97,9 @@ export interface ObjectDetail {
   regime: Regime;
   parent_cospar: string | null;
   first_seen_year: number;
+  event_id: string | null;
+  orbit_center: string | null;
+  updated_at: string;
   event: { id: string; name: string; event_date: string } | null;
   elements: OrbitElements | null;
 }
