@@ -129,7 +129,9 @@ rate_limits      key, window_start, count                -- chat limits across i
 `first_seen_year = max(launch_year, catalog_year(norad_id))`. `catalog_year` is the running
 max of payload launch dates ordered by NORAD id, since catalog numbers are assigned in order.
 An object is linked to a breakup event when it is DEB, its `parent_cospar` matches, and its
-catalog year is ≥ the event year; then `first_seen_year = year(event_date)`.
+catalog year is ≥ the event year − 1 (catalog numbers lag launches by up to a year: the first
+Fengyun-1C fragments, cataloged in early 2007, sit right after payloads launched in December 2006);
+then `first_seen_year = year(event_date)`.
 If `decay_date` is set, `first_seen_year` is clamped to ≤ the decay year (late-cataloged objects).
 **In orbit at the end of year Y** means `first_seen_year ≤ Y AND (decay_date IS NULL OR year(decay_date) > Y)`.
 Validation reference (computed 2026-09-22 from the live SATCAT, LEO only): debris in orbit
