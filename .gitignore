@@ -6,3 +6,12 @@ __pycache__/
 .venv/
 api/.snapshots/
 api/.env
+web/node_modules/
+web/.next/
+web/.env
+web/.env.local
+web/playwright-report/
+web/test-results/
+web/next-env.d.ts
+web/*.tsbuildinfo
+!web/.env.example
