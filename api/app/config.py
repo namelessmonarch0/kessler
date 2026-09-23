@@ -1,3 +1,4 @@
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -13,3 +14,13 @@ class Settings(BaseSettings):
     min_satcat_rows: int = 50_000
     min_gp_rows_spacetrack: int = 20_000
     min_gp_rows_celestrak: int = 5_000
+
+    @field_validator("spacetrack_user", "spacetrack_pass", "origin_secret", mode="before")
+    @classmethod
+    def _blank_to_none(cls, value: object) -> object:
+        # .env.example ships these blank (e.g. `SPACETRACK_USER=`); pydantic-settings
+        # otherwise reads that as "", not None, which silently changes behavior
+        # (a falsy-but-truthy secret, an "empty credentials" Space-Track client, ...).
+        if isinstance(value, str) and value.strip() == "":
+            return None
+        return value

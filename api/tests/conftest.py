@@ -6,6 +6,7 @@ import pytest
 from alembic import command
 from alembic.config import Config
 
+from app.config import Settings
 from app.db import connect
 
 API_ROOT = Path(__file__).resolve().parents[1]
@@ -14,6 +15,20 @@ FIXTURES = Path(__file__).parent / "fixtures"
 ALL_TABLES = (
     "gp_elements, yearly_stats, ingest_runs, objects, breakup_events, launch_sites, owners"
 )
+
+
+@pytest.fixture(autouse=True)
+def _no_dotenv(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep tests independent of a developer's local api/.env.
+
+    `Settings.model_config` is a plain dict class attribute that pydantic-settings reads
+    fresh on every `Settings()` call (it is not baked into the schema at class-definition
+    time), so mutating it here — and letting monkeypatch restore it after the test — reliably
+    disables dotenv loading without touching real env vars. Verified manually: instantiating
+    `Settings()` in a directory containing a `.env` with `ORIGIN_SECRET=leaked` returns
+    `"leaked"` normally, and `None` once `env_file` is patched to `None`.
+    """
+    monkeypatch.setitem(Settings.model_config, "env_file", None)
 
 
 @pytest.fixture(scope="session")
