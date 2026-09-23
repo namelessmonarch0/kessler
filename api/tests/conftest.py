@@ -15,7 +15,7 @@ def database_url() -> Iterator[str]:
     if url:
         yield url
         return
-    from testcontainers.postgres import PostgresContainer
+    from testcontainers.community.postgres import PostgresContainer
 
     with PostgresContainer("pgvector/pgvector:pg16", driver=None) as pg:
         yield pg.get_connection_url()
