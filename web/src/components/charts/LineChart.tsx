@@ -25,7 +25,10 @@ export function LineChart({ data }: { data: TimeseriesResponse }) {
   useEffect(() => {
     const el = wrap.current;
     if (!el) return;
-    const ro = new ResizeObserver(([e]) => setWidth(Math.max(320, e.contentRect.width)));
+    // 320 as a floor overflowed its own container at 390px viewport widths (a 314px-wide card,
+    // per review) — 260 is comfortably below any real card width this chart renders in while
+    // still keeping the plot legible.
+    const ro = new ResizeObserver(([e]) => setWidth(Math.max(260, e.contentRect.width)));
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
