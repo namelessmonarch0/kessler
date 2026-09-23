@@ -1,6 +1,7 @@
 "use client";
 
 import { animate, stagger } from "animejs";
+import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { chartTitle } from "@/lib/chartData";
@@ -9,7 +10,6 @@ import { regimesFor, useExplorer } from "@/lib/store";
 import type { BreakdownResponse, Meta, TimeseriesResponse } from "@/lib/types";
 import { BarChart } from "@/components/charts/BarChart";
 import { LineChart } from "@/components/charts/LineChart";
-import { GlobeSection } from "@/components/globe/GlobeSection";
 import { ChatPanel } from "@/components/panels/ChatPanel";
 import { Filters } from "@/components/panels/Filters";
 import { Footer } from "@/components/panels/Footer";
@@ -20,6 +20,17 @@ import { SearchBox } from "@/components/panels/SearchBox";
 import { StatTiles } from "@/components/panels/StatTiles";
 import { Card } from "@/components/ui/Card";
 import { Unavailable } from "@/components/ui/Unavailable";
+
+// GlobeSection pulls in three/R3F/postprocessing/satellite.js — by far the largest slice of the
+// page's JS — and only ever renders client-side anyway (it probes WebGL support in an effect and
+// has no server-renderable content). Loading it with next/dynamic(ssr:false) keeps that whole
+// graph out of the page's initial bundle so tiles/search/charts can hydrate without parsing it
+// first; the loading placeholder matches GlobeSection's own outer <section> exactly (same
+// classes/aria-label) so swapping it in doesn't shift layout.
+const GlobeSection = dynamic(() => import("@/components/globe/GlobeSection").then((m) => m.GlobeSection), {
+  ssr: false,
+  loading: () => <section className="card relative h-[420px] overflow-hidden sm:h-[560px]" aria-label="Live globe of tracked objects" />,
+});
 
 type Load<T> = { data: T | null; error: boolean };
 
