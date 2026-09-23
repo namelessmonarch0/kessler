@@ -1,0 +1,7 @@
+{"data_as_of":{"satcat":"2026-09-23T10:00:00Z","gp":"2026-09-23T12:00:00Z","stats":"2026-09-23T10:01:00Z"},
+ "in_orbit":{"PAY":{"LEO":17750,"GEO":1670},"DEB":{"LEO":9830},"R/B":{"LEO":993}},
+ "owners":[{"code":"US","name":"United States","flag_emoji":"🇺🇸","in_orbit":16052,"total":29205},
+           {"code":"PRC","name":"China","flag_emoji":"🇨🇳","in_orbit":5564,"total":9378}],
+ "types":{"PAY":"Payload","R/B":"Rocket body","DEB":"Debris","UNK":"Unknown"},
+ "regimes":{"LEO":"Low Earth orbit","MEO":"Medium Earth orbit","GEO":"Geostationary orbit","HEO":"Highly elliptical orbit","OTHER":"Other"},
+ "ops_status":{"+":"Operational"},"attribution":"Data: USSPACECOM via Space-Track.org; CelesTrak."}

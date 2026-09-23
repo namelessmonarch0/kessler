@@ -1,0 +1,3 @@
+{"at":2026,"by":"owner","rows":[{"key":"US","counts":{"PAY":13005,"DEB":2821,"R/B":226},"total":16052},
+ {"key":"PRC","counts":{"PAY":1404,"DEB":3976,"R/B":184},"total":5564},
+ {"key":"_other","counts":{"PAY":2121,"DEB":111,"R/B":70},"total":2302}]}
