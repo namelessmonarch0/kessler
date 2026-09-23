@@ -60,7 +60,7 @@ view shows illustrative positions and says so).
 Sources: Space-Track.org (primary, server-side credentials) · CelesTrak (fallback)
 ```
 
-**Repo:** new monorepo `namelessmonarch0/leo-debris`: `web/`, `api/`, `docs/`.
+**Repo:** new monorepo `namelessmonarch0/leo-debris`: `web/`, `api/`, `infra/` (AWS CDK), `docs/`.
 The portfolio repo (kudayyurter.dev) stays separate and links to the subdomain.
 
 ### Stack decisions (confirmed)
