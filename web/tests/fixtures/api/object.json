@@ -1,4 +1,5 @@
 {"norad_id":25544,"cospar_id":"1998-067A","name":"ISS (ZARYA)","object_type":"PAY","ops_status":"+","ops_status_label":"Operational",
  "owner":"ISS","owner_name":"International Space Station partners","flag_emoji":null,"launch_date":"1998-11-20","launch_site":"TYMSC",
  "launch_site_name":"Baikonur (Tyuratam)","decay_date":null,"period":92.95,"inclination":51.63,"apogee":422,"perigee":416,"rcs_size":"LARGE",
- "regime":"LEO","parent_cospar":"1998-067","first_seen_year":1998,"event":null,"elements":null}
+ "regime":"LEO","parent_cospar":"1998-067","first_seen_year":1998,"event_id":null,"orbit_center":"EA","updated_at":"2026-09-23T10:01:00Z",
+ "event":null,"elements":null}
