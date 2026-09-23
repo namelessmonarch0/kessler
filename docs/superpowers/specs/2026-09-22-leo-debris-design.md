@@ -134,9 +134,11 @@ Fengyun-1C fragments, cataloged in early 2007, sit right after payloads launched
 then `first_seen_year = year(event_date)`.
 If `decay_date` is set, `first_seen_year` is clamped to ≤ the decay year (late-cataloged objects).
 **In orbit at the end of year Y** means `first_seen_year ≤ Y AND (decay_date IS NULL OR year(decay_date) > Y)`.
-Validation reference (computed 2026-09-22 from the live SATCAT, LEO only): debris in orbit
-was 4,115 (2006), 6,453 (2007), 8,744 (2009); payloads overtook debris in 2024
-(11,895 vs 10,486).
+Validation reference (measured 2026-09-23 from the live CelesTrak SATCAT, LEO only, with
+event linking applied): debris in orbit was 4,180 (2006), 7,733 (2007), 10,240 (2009);
+payloads overtook debris in 2024 (11,895 payloads vs 10,533 debris). Linked breakup-event
+fragment counts: Fengyun-1C 3,533, Kosmos 1408 1,805, Cosmos 2251 1,714 — each dated to its
+event year rather than its (later) catalog year, per the derivation rule above.
 
 ### 3.6 Ingest jobs
 | Job | Schedule | Behavior |
