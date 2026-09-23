@@ -36,6 +36,23 @@ def test_totals_per_year(conn):
     assert [(r["year"], r["n"]) for r in rows] == [(2000, 1), (2008, 3), (2012, 2)]
 
 
+def test_rebuild_takes_advisory_lock_before_writing(conn, monkeypatch):
+    # Deterministic (no real concurrency): a spy on conn.execute confirms the advisory
+    # lock is acquired as the transaction's first statement, before the DELETE — this is
+    # what serializes concurrent rebuilds and avoids the yearly_stats unique violation.
+    seed_stats_world(conn)
+    calls: list[str] = []
+    original_execute = conn.execute
+
+    def spy(query, *args, **kwargs):
+        calls.append(str(query))
+        return original_execute(query, *args, **kwargs)
+
+    monkeypatch.setattr(conn, "execute", spy)
+    rebuild_yearly_stats(conn)
+    assert "pg_advisory_xact_lock" in calls[0]
+
+
 def test_rebuild_replaces_previous_rows_and_logs(conn):
     seed_stats_world(conn)
     first = run_rebuild_stats(conn)

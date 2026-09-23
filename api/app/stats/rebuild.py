@@ -20,6 +20,10 @@ GROUP BY y.year, o.owner, o.object_type, o.regime
 
 def rebuild_yearly_stats(conn: psycopg.Connection) -> int:
     with conn.transaction():
+        # Serializes concurrent rebuilds: without this, two overlapping rebuilds can both
+        # pass the DELETE and then race on the yearly_stats primary key, one hitting a
+        # unique violation. The lock is transaction-scoped and released automatically.
+        conn.execute("SELECT pg_advisory_xact_lock(hashtext('rebuild_stats'))")
         conn.execute("DELETE FROM yearly_stats")
         return conn.execute(REBUILD_SQL).rowcount
 
