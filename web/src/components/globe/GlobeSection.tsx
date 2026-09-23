@@ -58,7 +58,14 @@ export function GlobeSection() {
   const [status, setStatus] = useState<Status>("loading");
   const [renderFailed, setRenderFailed] = useState(false);
   const [contextLost, setContextLost] = useState(false);
+  // Whether the globe card is scrolled into view *and* the tab is foregrounded. Drives both the
+  // R3F render loop (frameloop="never" while inactive) and the propagation worker's tick
+  // interval (paused via the `active` prop threaded down to usePropagation), so an offscreen or
+  // backgrounded globe stops burning CPU/battery on rendering and orbit propagation it isn't
+  // showing anyone.
+  const [active, setActive] = useState(true);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const sectionRef = useRef<HTMLElement>(null);
   const wantHigh = useExplorer((s) => s.orbits.high);
   const timeScale = useExplorer((s) => s.timeScale);
   const setTimeScale = useExplorer((s) => s.setTimeScale);
@@ -106,19 +113,37 @@ export function GlobeSection() {
     return () => canvas.removeEventListener("webglcontextlost", onLost);
   }, [webgl]);
 
+  useEffect(() => {
+    const el = sectionRef.current;
+    if (!el) return;
+    let intersecting = true;
+    const update = () => setActive(intersecting && document.visibilityState === "visible");
+    const io = new IntersectionObserver(([entry]) => {
+      intersecting = entry.isIntersecting;
+      update();
+    });
+    io.observe(el);
+    document.addEventListener("visibilitychange", update);
+    return () => {
+      io.disconnect();
+      document.removeEventListener("visibilitychange", update);
+    };
+  }, []);
+
   return (
-    <section className="card relative h-[420px] overflow-hidden sm:h-[560px]" aria-label="Live globe of tracked objects">
+    <section ref={sectionRef} className="card relative h-[420px] overflow-hidden sm:h-[560px]" aria-label="Live globe of tracked objects">
       {webgl && !broken && (
         <GlobeErrorBoundary onError={() => setRenderFailed(true)}>
           <Canvas
             ref={canvasRef}
+            frameloop={active ? "always" : "never"}
             style={{ position: "absolute", inset: 0 }}
             camera={{ position: [0.6, 0.9, 3.6], fov: 40, near: 0.005, far: 100 }}
             dpr={[1, 2]}
             gl={{ antialias: true }}
           >
             <color attach="background" args={["#000000"]} />
-            <GlobeScene leo={leo} high={high} />
+            <GlobeScene leo={leo} high={high} active={active} />
           </Canvas>
         </GlobeErrorBoundary>
       )}

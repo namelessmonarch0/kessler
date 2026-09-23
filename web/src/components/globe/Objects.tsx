@@ -19,12 +19,16 @@ export function Objects({
   records,
   group,
   onReady,
+  active = true,
 }: {
   records: OrbitRecord[];
   group: "LEO" | "HIGH";
   onReady?: (positionOf: (noradId: number) => THREE.Vector3 | null) => void;
+  /** Whether the globe is visible/foregrounded — see GlobeSection/GlobeScene. Pauses the
+   * propagation worker's tick interval while false. */
+  active?: boolean;
 }) {
-  const frames = usePropagation(records);
+  const frames = usePropagation(records, active);
   const camera = useThree((s) => s.camera);
   const types = useExplorer((s) => s.types);
   const owners = useExplorer((s) => s.owners);

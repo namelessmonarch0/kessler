@@ -12,9 +12,12 @@ export type PropagationFrames = {
 const TICK_MS = 100;
 
 /** Keeps the latest two position frames from the worker. Renderers interpolate between them
- * at simClock.now(). */
-export function usePropagation(records: OrbitRecord[] | null): PropagationFrames {
+ * at simClock.now(). `active` (default true) pauses the tick interval — without tearing down
+ * the worker or losing the last two frames — while the globe is offscreen or the tab is
+ * backgrounded, so an invisible globe doesn't keep propagating orbits nobody is rendering. */
+export function usePropagation(records: OrbitRecord[] | null, active = true): PropagationFrames {
   const frames = useRef({ prev: null as Float32Array | null, next: null as Float32Array | null, prevTime: 0, nextTime: 0 });
+  const requestRef = useRef<() => void>(() => {});
 
   useEffect(() => {
     if (!records || records.length === 0) return;
@@ -27,6 +30,7 @@ export function usePropagation(records: OrbitRecord[] | null): PropagationFrames
       const msg: WorkerIn = { kind: "tick", timeMs: simClock.now() + TICK_MS * simClock.scale, id: ++id };
       worker.postMessage(msg);
     };
+    requestRef.current = request;
     worker.onmessage = (e: MessageEvent<WorkerOut>) => {
       const msg = e.data;
       if (msg.kind === "loaded") {
@@ -42,13 +46,20 @@ export function usePropagation(records: OrbitRecord[] | null): PropagationFrames
     };
     const load: WorkerIn = { kind: "load", records };
     worker.postMessage(load);
-    const timer = window.setInterval(request, TICK_MS);
     return () => {
-      window.clearInterval(timer);
+      requestRef.current = () => {};
       worker.terminate();
       frames.current = { prev: null, next: null, prevTime: 0, nextTime: 0 };
     };
   }, [records]);
+
+  // Kept separate from the effect above so toggling `active` pauses/resumes the tick cadence
+  // without restarting the worker (which would re-send every record and drop in-flight frames).
+  useEffect(() => {
+    if (!active || !records || records.length === 0) return;
+    const timer = window.setInterval(() => requestRef.current(), TICK_MS);
+    return () => window.clearInterval(timer);
+  }, [active, records]);
 
   return frames;
 }

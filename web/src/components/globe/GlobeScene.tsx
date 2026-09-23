@@ -24,7 +24,18 @@ declare global {
   }
 }
 
-export function GlobeScene({ leo, high }: { leo: OrbitRecord[] | null; high: OrbitRecord[] | null }) {
+export function GlobeScene({
+  leo,
+  high,
+  active = true,
+}: {
+  leo: OrbitRecord[] | null;
+  high: OrbitRecord[] | null;
+  /** Whether the globe card is visible and the tab is foregrounded — see GlobeSection. Threaded
+   * down to each Objects/usePropagation instance to pause the propagation worker's tick
+   * interval while nothing is rendering the results. */
+  active?: boolean;
+}) {
   if (process.env.NODE_ENV !== "production" && typeof window !== "undefined" && window.__LEO_FORCE_GLOBE_ERROR__) {
     throw new Error("Forced globe error (test-only, via window.__LEO_FORCE_GLOBE_ERROR__)");
   }
@@ -78,8 +89,8 @@ export function GlobeScene({ leo, high }: { leo: OrbitRecord[] | null; high: Orb
       <ambientLight intensity={0.35} />
       <directionalLight ref={sun} intensity={2.2} />
       <Earth />
-      {leo && <Objects records={leo} group="LEO" onReady={onReadyLeo} />}
-      {high && <Objects records={high} group="HIGH" onReady={onReadyHigh} />}
+      {leo && <Objects records={leo} group="LEO" onReady={onReadyLeo} active={active} />}
+      {high && <Objects records={high} group="HIGH" onReady={onReadyHigh} active={active} />}
       <OrbitControls ref={controls} enableDamping enablePan={false} minDistance={1.12} maxDistance={9} zoomSpeed={0.8} />
       <EffectComposer multisampling={0}>
         <primitive object={dither} dispose={null} />
