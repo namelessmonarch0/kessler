@@ -5,12 +5,40 @@ export function niceMax(max: number): number {
   return 10 * exp;
 }
 
+const Y_TICK_CANDIDATES = [1, 2, 2.5, 5];
+
+/**
+ * Picks a "nice" step (1/2/2.5/5 × 10ⁿ) that divides `max` evenly into 3-5
+ * intervals (4-6 ticks including 0 and max), preferring the finest such step.
+ * Searches the exponent of `max` and one order of magnitude below it, since
+ * niceMax's mantissas (1/2/2.5/5/10) only ever need a step from one of those
+ * two magnitudes to land in range.
+ */
 export function yTicks(max: number): number[] {
-  return [0, 1, 2, 3, 4].map((i) => (max / 4) * i);
+  if (max <= 0) return [0];
+  const baseExp = Math.pow(10, Math.floor(Math.log10(max)));
+  let step: number | null = null;
+  for (const exp of [baseExp, baseExp / 10]) {
+    for (const c of Y_TICK_CANDIDATES) {
+      const candidate = c * exp;
+      const intervals = max / candidate;
+      const rounded = Math.round(intervals);
+      if (Math.abs(intervals - rounded) < 1e-9 && rounded >= 3 && rounded <= 5) {
+        if (step === null || candidate < step) step = candidate;
+      }
+    }
+  }
+  const finalStep = step ?? max / 4;
+  const n = Math.round(max / finalStep);
+  return Array.from({ length: n + 1 }, (_, i) => Math.round(i * finalStep * 1e6) / 1e6);
 }
 
-/** Departure Mono is monospaced at 12px; this is a cheap, dependency-free width estimate. */
-export const CHAR_W = 7.2;
+/**
+ * Departure Mono px-per-character at 12px: measured with fonttools on
+ * DepartureMono-Regular.woff2 — unitsPerEm 550, glyph advance 350 —
+ * so advance = 350 / 550 em × 12px.
+ */
+export const CHAR_W = (350 / 550) * 12;
 
 const ANNOTATION_ROWS = 4;
 const ANNOTATION_GAP = 8;
@@ -29,7 +57,6 @@ export function layoutAnnotations(
   left: number,
   right: number,
 ): LaidOutAnnotation[] {
-  void right;
   const placed: { row: number; x0: number; x1: number }[] = [];
   const result: LaidOutAnnotation[] = [];
   for (const item of items) {
@@ -42,6 +69,15 @@ export function layoutAnnotations(
       anchor = "start";
       x0 = x;
       x1 = x + w;
+      if (x1 > right) {
+        // A start anchor doesn't fit either (label wider than the plot area). The row search
+        // below still runs — a different row can't change the horizontal overflow, so as a last
+        // resort clamp back to an end anchor, which is the least-bad option (labels wide enough
+        // to trigger this are rare and the "end" side is what real annotation text is tuned for).
+        anchor = "end";
+        x0 = x - w;
+        x1 = x;
+      }
     }
     let row = 0;
     for (; row < ANNOTATION_ROWS; row++) {
@@ -57,11 +93,18 @@ export function layoutAnnotations(
   return result;
 }
 
+// Reserved gap between the label text and the bars, plus slack for CHAR_W's estimation error
+// against real (kerning-affected) glyph rendering.
+const LABEL_RESERVE = 24;
+// The fits-check uses a slightly smaller reservation than LABEL_RESERVE (~4px less), so the
+// longest label — the one that sized marginLeft in the first place — is never flagged as
+// needing truncation by its own rounding.
+const LABEL_CHECK_RESERVE = LABEL_RESERVE - 4;
+
 export function labelColumn(labels: string[], width: number): { marginLeft: number; display: string[] } {
-  const PAD = 18;
   const longest = Math.max(0, ...labels.map((l) => l.length));
-  const marginLeft = Math.min(longest * CHAR_W + PAD, Math.round(width * 0.38));
-  const avail = Math.max(0, marginLeft - PAD);
+  const marginLeft = Math.min(Math.ceil(longest * CHAR_W) + LABEL_RESERVE, Math.round(width * 0.38));
+  const avail = Math.max(0, marginLeft - LABEL_CHECK_RESERVE);
   const maxChars = Math.max(1, Math.floor(avail / CHAR_W));
   const display = labels.map((l) => (l.length <= maxChars ? l : `${l.slice(0, Math.max(0, maxChars - 1))}…`));
   return { marginLeft, display };

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { labelColumn, layoutAnnotations, niceMax, tooltipPosition, yearTicks, yTicks } from "@/components/charts/scales";
+import { CHAR_W, labelColumn, layoutAnnotations, niceMax, tooltipPosition, yearTicks, yTicks } from "@/components/charts/scales";
 
 describe("chart scales", () => {
   it("rounds the axis max up to a clean number", () => {
@@ -8,8 +8,11 @@ describe("chart scales", () => {
     expect(niceMax(2300)).toBe(2500);
     expect(niceMax(0)).toBe(1);
   });
-  it("makes five evenly spaced ticks from zero", () => {
+  it("makes evenly spaced nice ticks from zero", () => {
     expect(yTicks(20000)).toEqual([0, 5000, 10000, 15000, 20000]);
+  });
+  it("picks a round step for a smaller max", () => {
+    expect(yTicks(250)).toEqual([0, 50, 100, 150, 200, 250]);
   });
 });
 
@@ -37,19 +40,33 @@ describe("layoutAnnotations", () => {
     const result = layoutAnnotations(items, xOf, 0, 680);
     expect(result[0].anchor).toBe("end");
   });
+
+  it("clamps back to an end anchor when a start-anchored label would cross the right edge", () => {
+    // near the left edge (forces a start anchor) but wide enough that "start" would run past `right` too
+    const items = [{ year: 1957, label: "A".repeat(90) }];
+    const result = layoutAnnotations(items, xOf, 0, 680);
+    expect(result[0].anchor).toBe("end");
+  });
 });
 
 describe("labelColumn", () => {
   it("reserves enough room for the longest label, capped at 38% of the width", () => {
     const { marginLeft, display } = labelColumn(["United States", "China"], 250);
     expect(marginLeft).toBe(95);
-    expect(display[0]).toBe("United St…");
+    expect(display[0]).toBe("United S…");
     expect(display[1]).toBe("China");
   });
 
   it("leaves short labels untouched when the column has room", () => {
     const { display } = labelColumn(["USA", "UK"], 400);
     expect(display).toEqual(["USA", "UK"]);
+  });
+
+  it("does not truncate the longest label when the margin isn't width-capped", () => {
+    const { marginLeft, display } = labelColumn(["United Kingdom", "China"], 1000);
+    expect(marginLeft).toBeGreaterThanOrEqual(14 * CHAR_W + 18);
+    expect(display[0]).toBe("United Kingdom");
+    expect(display[1]).toBe("China");
   });
 });
 
