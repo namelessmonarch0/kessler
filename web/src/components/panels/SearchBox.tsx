@@ -23,12 +23,20 @@ export function SearchBox() {
       setError(null);
       return;
     }
+    // `cancelled` guards against the fetch itself arriving out of order (the debounce timeout
+    // below only protects against a *pending* timer being superseded — once it fires and the
+    // fetch is in flight, a fast response to a later query could otherwise be overwritten by a
+    // slow response to an earlier one).
+    let cancelled = false;
     const id = window.setTimeout(() => {
       api.search(text)
-        .then((r) => { setResults(r); setError(null); })
-        .catch((e: Error) => { setResults([]); setError(e.message); });
+        .then((r) => { if (!cancelled) { setResults(r); setError(null); } })
+        .catch((e: Error) => { if (!cancelled) { setResults([]); setError(e.message); } });
     }, 250);
-    return () => window.clearTimeout(id);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(id);
+    };
   }, [q]);
 
   return (

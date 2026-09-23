@@ -36,13 +36,20 @@ export default function Explorer() {
   }, []);
 
   useEffect(() => {
+    // Filters can change faster than the network responds (e.g. clicking two filter chips in a
+    // row); without this guard, an earlier request's response arriving after a later one would
+    // stomp the chart with stale data for the wrong filters.
+    let cancelled = false;
     const regimes = regimesFor(orbits);
     api.timeseries({ group_by: "type", owners, types, regimes, from: 1960 })
-      .then((d) => setTs({ data: d, error: false }))
-      .catch(() => setTs({ data: null, error: true }));
+      .then((d) => !cancelled && setTs({ data: d, error: false }))
+      .catch(() => !cancelled && setTs({ data: null, error: true }));
     api.breakdown({ by: "owner", types, regimes, top: 5 })
-      .then((d) => setBars({ data: d, error: false }))
-      .catch(() => setBars({ data: null, error: true }));
+      .then((d) => !cancelled && setBars({ data: d, error: false }))
+      .catch(() => !cancelled && setBars({ data: null, error: true }));
+    return () => {
+      cancelled = true;
+    };
   }, [owners, types, orbits]);
 
   // Stagger the intro cards in on load. Snapshot the `.card` elements present right now (rather
