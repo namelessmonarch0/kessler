@@ -39,16 +39,20 @@ view shows illustrative positions and says so).
 │    Web Worker; Earth-fixed frame; real-time sun            │
 │  • Charts: SVG (d3-scale/d3-shape) animated with anime.js  │
 │  • Chat panel: SSE stream, applies globe commands          │
-│  • next.config rewrites /api/* → Cloud Run (same origin)   │
+│  • /api/* route handler proxies to AWS (adds origin secret,│
+│    streams SSE through, sets cache headers)                │
 └──────────────────────────┬─────────────────────────────────┘
-┌─ Google Cloud Run ────────▼────────────────────────────────┐
-│ Service: FastAPI (Python 3.12, Docker)                     │
+┌─ AWS us-east-1 (defined in AWS CDK, Python) ▼──────────────┐
+│ Lambda "api" (container image, Function URL,               │
+│   RESPONSE_STREAM): FastAPI via AWS Lambda Web Adapter     │
 │   REST stats/objects/globe endpoints + POST /api/chat      │
 │   LangGraph agent (LangChain chat model, provider via env) │
-│ Jobs (Cloud Scheduler): ingest_satcat · ingest_gp ·        │
-│   rebuild_stats · (manual) rag_ingest                      │
+│ Lambda jobs via EventBridge Scheduler: ingest_satcat ·     │
+│   ingest_gp · rebuild_stats · (manual) rag_ingest          │
+│ S3: globe snapshots · SSM Parameter Store: secrets ·       │
+│ ECR: images · CloudWatch: logs · Budgets: $5 alert         │
 └──────────────────────────┬─────────────────────────────────┘
-┌─ Neon Postgres (free tier) ▼───────────────────────────────┐
+┌─ Neon Postgres (free tier, AWS us-east-1) ▼────────────────┐
 │ objects · gp_elements · owners · launch_sites ·            │
 │ breakup_events · yearly_stats · documents · chunks         │
 │ (pgvector) · ingest_runs · rate_limits                     │
@@ -65,7 +69,10 @@ The portfolio repo (kudayyurter.dev) stays separate and links to the subdomain.
 - Embeddings: **fastembed `BAAI/bge-small-en-v1.5`** (384-d, local, free).
 - LLM: provider-agnostic via `init_chat_model(LLM_MODEL)`. No key yet; the owner will
   pick a low-cost provider later.
-- Hosting: Vercel (web), Google Cloud Run + Cloud Scheduler (api/jobs), Neon (db).
+- Hosting: Vercel (web); **AWS** (Lambda + Function URL, EventBridge Scheduler, S3, SSM
+  Parameter Store, ECR, CloudWatch, Budgets), defined as code with **AWS CDK (Python)**;
+  Neon (db, AWS us-east-1 region). Chosen so the AWS bill after the 6-month free plan
+  ends stays around $0–2/month (the account must then be upgraded to a paid plan or AWS closes it).
 
 ## 3. Data
 
@@ -73,7 +80,7 @@ The portfolio repo (kudayyurter.dev) stays separate and links to the subdomain.
 - **Space-Track.org** (primary). USSPACECOM gives blanket approval to redistribute basic SSA
   data (TLE/OMM, SATCAT, decay) **with citation**. Rate limits: under 30 requests/min and under 300/hr.
   Use bulk queries only, with GP polling at a randomized minute. Credentials stay only in
-  Secret Manager and are used only by the jobs.
+  SSM Parameter Store (SecureString) and are used only by the job Lambdas.
 - **CelesTrak** (fallback). SATCAT and the `active` GP group. It has no full-catalog GP (checked
   2026-09-22: `GROUP=all` is invalid, and `active` covers only ~15.8k of ~28.6k LEO objects), so it is a
   fallback only.
@@ -135,12 +142,15 @@ If Space-Track has failed for more than 24 h, fall back to CelesTrak.
 
 ### 3.7 Globe snapshot
 LEO objects (default) plus a separate MEO/GEO file. Per object: norad_id, type code, owner
-index and the SGP4 inputs. Packed binary (Float32/Uint32 arrays) + gzip, ~2 MB for LEO. Served from
-`/api/globe/snapshot` with an ETag and a 6 h CDN cache.
+index and the SGP4 inputs. Packed binary (Float32/Uint32 arrays) + gzip, ~2 MB for LEO. Written to S3 by
+`ingest_gp`. `/api/globe/snapshot` streams it with an ETag, and the Vercel proxy caches it for 6 h.
 
 ## 4. API (FastAPI)
 
-All routes are under `/api`, reached from the browser through the Next.js rewrite. Input is Pydantic-validated.
+All routes are under `/api`, reached from the browser through a Next.js route-handler proxy
+(`web/app/api/[...path]/route.ts`). The proxy forwards to the Lambda Function URL with an
+`X-Origin-Auth` shared secret, and the API rejects requests without it, so the Function URL is not a
+public back door. SSE responses are streamed through untouched. Input is Pydantic-validated.
 Errors use the shape `{error:{code,message}}`.
 
 | Endpoint | Purpose | Cache |
@@ -155,7 +165,7 @@ Errors use the shape `{error:{code,message}}`.
 | `POST /chat` | agent, SSE | none |
 | `GET /health` | liveness, DB check, ingest age | none |
 
-REST handlers and agent tools share one service layer (`api/app/services/`), so chat
+The API also runs locally with plain `uvicorn` for development. REST handlers and agent tools share one service layer (`api/app/services/`), so chat
 answers and charts come from identical queries.
 
 ## 5. AI analyst
@@ -246,18 +256,33 @@ are in `.superpowers/brainstorm/` (globe-sun.html, globe-anime.html, globe-2d-sm
 
 ## 9. Deployment
 - Vercel project for `web/`, domain `leo.kudayyurter.dev`. The owner adds a CNAME
-  `leo → cname.vercel-dns.com` at the external registrar.
-- Cloud Run service + 3 Cloud Run Jobs + Cloud Scheduler, deployed by GitHub Actions
-  (Workload Identity Federation, no long-lived keys). Secrets in Secret Manager:
-  `DATABASE_URL`, `SPACETRACK_USER`, `SPACETRACK_PASS`, later `LLM_MODEL` + provider key.
-- Neon free tier (0.5 GB; expected usage 60–80 MB).
-- Owner one-time setup: GCP project with billing + budget alert, Neon account, DNS record.
+  `leo → cname.vercel-dns.com` at the external registrar. Vercel env: `API_ORIGIN_URL`
+  (Function URL), `ORIGIN_SECRET`.
+- AWS (us-east-1), all in one CDK app (`infra/`):
+  - ECR repository; a single container image (`api/Dockerfile`, Lambda Web Adapter,
+    fastembed model files baked in to avoid cold-start downloads) with different handlers/commands
+    for the API and the jobs.
+  - Lambda `api`: 1,024 MB, 60 s timeout (chat streaming), Function URL with `RESPONSE_STREAM`,
+    reserved concurrency 10 (caps runaway cost).
+  - Lambda `ingest_satcat`, `ingest_gp`, `rebuild_stats`, `rag_ingest`: 1,536 MB, 10 min timeout;
+    EventBridge Scheduler rules (daily; every 6 h at a random minute; chained stats rebuild).
+  - S3 bucket for snapshots; SSM SecureStrings `/leo/DATABASE_URL`, `/leo/SPACETRACK_USER`,
+    `/leo/SPACETRACK_PASS`, `/leo/ORIGIN_SECRET`, later `/leo/LLM_MODEL` + provider key.
+  - CloudWatch log retention of 14 days; AWS Budgets alert at $5/month.
+- CI/CD: GitHub Actions assumes an IAM role via **OIDC** (no stored AWS keys), builds and pushes
+  the image, then runs `cdk deploy`.
+- Neon free tier (0.5 GB; expected usage 60–80 MB), AWS us-east-1 region, pooled connection
+  string (Lambda-friendly).
+- Owner one-time setup: AWS account (done) + Budgets alert confirmation, CDK bootstrap,
+  Neon account, DNS record. Step-by-step instructions are included in the plan.
+- **6-month reminder:** before the AWS free plan ends, upgrade the account to a paid plan
+  (expected cost of about $0–2/month) or it will be closed.
 
 ## 10. Build order
 1. **Data:** schema + migrations (Alembic), ingest jobs, stats, REST API, tests.
 2. **Web:** globe and charts on real API data.
 3. **AI:** RAG corpus + LangGraph agent + SSE chat (works up to the LLM call without a key).
-4. **Deploy:** subdomain, Cloud Run, schedulers.
+4. **Deploy:** subdomain, AWS CDK stack (Lambda, schedulers, S3, SSM), CI/CD.
 5. **Polish:** resolve §6.2, anime.js choreography, About page.
 
 ## 11. Roadmap (post-v1)
