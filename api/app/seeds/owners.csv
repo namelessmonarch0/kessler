@@ -1,0 +1,48 @@
+code,name,country_iso
+US,United States,US
+CIS,Russia / former USSR,RU
+PRC,China,CN
+FR,France,FR
+JPN,Japan,JP
+IND,India,IN
+UK,United Kingdom,GB
+TBD,To be determined,
+ESA,European Space Agency,
+GER,Germany,DE
+ITSO,Intelsat,
+IT,Italy,IT
+ISS,International Space Station partners,
+CA,Canada,CA
+SPN,Spain,ES
+ORB,ORBCOMM,
+CHBZ,China / Brazil (CBERS),
+GLOB,Globalstar,
+SKOR,South Korea,KR
+AUS,Australia,AU
+ARGN,Argentina,AR
+SES,SES,
+ISRA,Israel,IL
+EUTE,Eutelsat,
+TURK,Turkey,TR
+ROC,Taiwan,TW
+FIN,Finland,FI
+SEAL,Sea Launch,
+IRAN,Iran,IR
+UAE,United Arab Emirates,AE
+O3B,O3b Networks,
+BRAZ,Brazil,BR
+NOR,Norway,NO
+POL,Poland,PL
+SING,Singapore,SG
+LUXE,Luxembourg,LU
+NZ,New Zealand,NZ
+INDO,Indonesia,ID
+SWTZ,Switzerland,CH
+GREC,Greece,GR
+IM,Inmarsat,
+EUME,EUMETSAT,
+NETH,Netherlands,NL
+SAUD,Saudi Arabia,SA
+AB,Arabsat,
+NKOR,North Korea,KP
+UNK,Unknown,
