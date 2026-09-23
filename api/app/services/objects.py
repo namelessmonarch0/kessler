@@ -51,6 +51,8 @@ def get_object(conn: psycopg.Connection, norad_id: int) -> dict | None:
 
 def search_objects(conn: psycopg.Connection, q: str, limit: int = 20) -> list[dict]:
     q = q.strip()
+    if any(ord(c) < 32 for c in q):
+        raise ApiError(422, "invalid_query", "search text contains invalid control characters")
     base = (
         "SELECT norad_id, name, cospar_id, object_type, owner, regime, "
         "(decay_date IS NOT NULL) AS decayed FROM objects "

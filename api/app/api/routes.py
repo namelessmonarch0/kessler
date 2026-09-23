@@ -30,9 +30,13 @@ def this_year() -> int:
 
 
 @router.get("/health")
-def health(conn: psycopg.Connection = Depends(get_conn)) -> dict:
-    conn.execute("SELECT 1")
-    last_gp = last_success(conn, "ingest_gp")
+def health(request: Request) -> dict:
+    try:
+        with request.app.state.db.pool.connection() as conn:
+            conn.execute("SELECT 1")
+            last_gp = last_success(conn, "ingest_gp")
+    except Exception as exc:
+        raise ApiError(503, "unavailable", "database unavailable") from exc
     age = (datetime.now(UTC) - last_gp).total_seconds() / 3600 if last_gp else None
     return {"status": "ok", "gp_age_hours": age}
 
@@ -84,7 +88,7 @@ def breakdown(
 def distribution(
     response: Response,
     field: Literal["perigee", "apogee", "inclination", "rcs_size"] = "perigee",
-    bin_width: float | None = Query(None, gt=0, le=10000),
+    bin_width: float | None = Query(None, ge=0.1, le=10000),
     owners: str | None = None,
     types: str | None = None,
     regimes: str | None = None,

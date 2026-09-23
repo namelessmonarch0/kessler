@@ -61,6 +61,10 @@ def test_timeseries(client):
         ("/api/objects/search?q=a", "invalid_query"),
         ("/api/objects/notanumber", "invalid_request"),
         ("/api/objects/99999999999", "invalid_request"),
+        # Regression: these used to hit Postgres with malformed input and 500 as text/plain.
+        ("/api/stats/distribution?field=perigee&bin_width=1e-310", "invalid_request"),
+        ("/api/objects/search?q=ab%00cd", "invalid_query"),
+        ("/api/stats/timeseries?owners=US%00", "invalid_filter"),
     ],
 )
 def test_bad_params_return_422_json(client, url, code):
@@ -68,6 +72,36 @@ def test_bad_params_return_422_json(client, url, code):
     assert r.status_code == 422
     assert r.json()["error"]["code"] == code
     assert r.json()["error"]["message"]
+
+
+def test_unhandled_exception_returns_json_500(world, migrated, store):
+    from app.api.routes import get_conn
+
+    def boom():
+        raise RuntimeError("boom: something leaked")
+        yield  # pragma: no cover - makes this a generator function
+
+    db = Database(migrated)
+    app = create_app(Settings(database_url=migrated), store=store, database=db)
+    app.dependency_overrides[get_conn] = boom
+    # raise_server_exceptions=False: a real ASGI server (uvicorn) never re-raises past a
+    # registered exception handler; the TestClient default does, purely for debugging.
+    with TestClient(app, raise_server_exceptions=False) as c:
+        r = c.get("/api/meta")
+    db.close()
+    assert r.status_code == 500
+    assert r.json() == {"error": {"code": "internal", "message": "internal server error"}}
+    assert "boom" not in r.text
+
+
+def test_health_returns_503_json_when_db_unavailable(migrated, store):
+    db = Database(migrated)
+    app = create_app(Settings(database_url=migrated), store=store, database=db)
+    with TestClient(app) as c:
+        db.close()
+        r = c.get("/api/health")
+    assert r.status_code == 503
+    assert r.json()["error"]["code"] == "unavailable"
 
 
 def test_breakdown_and_distribution(client):

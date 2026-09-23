@@ -37,9 +37,17 @@ def _split(value: str | None) -> tuple[str, ...] | None:
     return items or None
 
 
+def _reject_control_chars(value: str | None) -> None:
+    # psycopg/Postgres reject NUL bytes outright and would otherwise surface as a 500.
+    if value and any(ord(c) < 32 for c in value):
+        raise ApiError(422, "invalid_filter", "filter value contains invalid control characters")
+
+
 def parse_filters(
     conn: psycopg.Connection, owners: str | None, types: str | None, regimes: str | None
 ) -> Filters:
+    for value in (owners, types, regimes):
+        _reject_control_chars(value)
     f = Filters(_split(owners), _split(types), _split(regimes))
     for t in f.types or ():
         if t not in OBJECT_TYPES:
