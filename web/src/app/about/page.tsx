@@ -33,7 +33,7 @@ export default function About() {
           <h2 className="font-mono text-[18px] text-ink">How the numbers are counted</h2>
           <ul className="mt-3 list-disc space-y-2 pl-5 text-[15px] leading-relaxed text-ink-2">
             <li>The catalog lists every object tracked since Sputnik in 1957, including about 35,000 that have already re-entered.</li>
-            <li>An object counts as &quot;in orbit&quot; in a year if it was first seen by then and had not re-entered by the end of that year.</li>
+            <li>An object counts as &ldquo;in orbit&rdquo; in a year if it was first seen by then and had not re-entered by the end of that year.</li>
             <li>Debris is dated by when it appeared, not by its parent&apos;s launch. Fragments from known breakups (Fengyun-1C in 2007, Iridium–Cosmos in 2009, Kosmos 1408 in 2021, and others) are dated to the event.</li>
             <li>Low Earth orbit here means an apogee below 2,000 km.</li>
             <li>Positions are computed in your browser from published orbital elements with the SGP4 model; the day/night line follows the real Sun.</li>
