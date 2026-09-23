@@ -8,7 +8,7 @@ import type { OrbitRecord } from "@/lib/snapshot";
 import { isVisible, useExplorer } from "@/lib/store";
 import { TYPE_COLORS, type ObjectType } from "@/lib/types";
 import { usePropagation } from "@/components/globe/usePropagation";
-import { interpolate, objectSize, writeInstance } from "@/components/globe/instances";
+import { initBoundingSphere, interpolate, objectSize, writeInstance } from "@/components/globe/instances";
 import { createDebrisGeometry, createRocketBodyGeometry, createSatelliteGeometry } from "@/components/globe/objectGeometries";
 
 type Kind = "sat" | "rb" | "deb";
@@ -69,6 +69,18 @@ export function Objects({
   const rbRef = useRef<THREE.InstancedMesh>(null);
   const debRef = useRef<THREE.InstancedMesh>(null);
   const meshes = useMemo(() => ({ sat: satRef, rb: rbRef, deb: debRef }), []);
+
+  // Fix a generous picking sphere on each instanced mesh once, at creation, before any raycast
+  // can run — see initBoundingSphere's comment. Radius is a loose bound on the LEO/HIGH object
+  // clouds in scene units (Earth radius = 1); it only gates the coarse "does the ray pass near
+  // this mesh at all" test, so being generous costs nothing.
+  useEffect(() => {
+    const radius = group === "LEO" ? 1.4 : 8;
+    (Object.keys(meshes) as Kind[]).forEach((kind) => {
+      const mesh = meshes[kind].current;
+      if (mesh) initBoundingSphere(mesh, radius);
+    });
+  }, [group, meshes, buckets]);
   const scratch = useMemo(
     () => ({ pos: new THREE.Vector3(), ahead: new THREE.Vector3(), vel: new THREE.Vector3(), m: new THREE.Matrix4(), dummy: new THREE.Object3D() }),
     [],
