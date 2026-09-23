@@ -55,7 +55,7 @@ def search_objects(conn: psycopg.Connection, q: str, limit: int = 20) -> list[di
         "SELECT norad_id, name, cospar_id, object_type, owner, regime, "
         "(decay_date IS NOT NULL) AS decayed FROM objects "
     )
-    if q.isdigit():
+    if q.isascii() and q.isdigit() and len(q) <= 9:
         return conn.execute(base + "WHERE norad_id = %s", (int(q),)).fetchall()
     if len(q) < 2:
         raise ApiError(422, "invalid_query", "search text must be at least 2 characters")

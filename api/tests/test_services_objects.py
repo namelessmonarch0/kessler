@@ -67,6 +67,17 @@ def test_search_orders_in_orbit_first(world):
     assert ids.index(10) == len(ids) - 1
 
 
+def test_search_rejects_non_ascii_digit_as_number(world):
+    with pytest.raises(ApiError) as e:
+        search_objects(world, "²")  # single superscript-two char; isdigit() but not ascii
+    assert e.value.code == "invalid_query"
+    assert search_objects(world, "①①") == []  # circled digit one, twice
+
+
+def test_search_rejects_oversized_number_without_db_error(world):
+    assert search_objects(world, "99999999999") == []
+
+
 def test_list_events_counts_pieces(world):
     world.execute("UPDATE objects SET event_id = 'fengyun-1c-2007' WHERE norad_id = 2")
     events = {e["id"]: e for e in list_events(world)}
