@@ -94,12 +94,36 @@ def test_snapshots_are_written_per_group(catalog, store):
 
 def test_too_few_spacetrack_rows_keeps_data(catalog, store):
     s = Settings(min_satcat_rows=10, min_gp_rows_spacetrack=100, min_gp_rows_celestrak=1)
+    # A recent Space-Track success means the row-floor failure below must stay within the
+    # 24h grace window: it raises rather than silently falling back to CelesTrak.
+    run_ingest_gp(
+        catalog, spacetrack=FakeSpaceTrack(ST_SAMPLE), celestrak=FakeCelesTrakGp(SAMPLE),
+        store=store, settings=SETTINGS, now=NOW,
+    )
+    before = gp_rows(catalog)
     with pytest.raises(SourceError, match="expected at least 100"):
         run_ingest_gp(
             catalog, spacetrack=FakeSpaceTrack(ST_SAMPLE), celestrak=FakeCelesTrakGp(SAMPLE),
             store=store, settings=s, now=NOW,
         )
-    assert gp_rows(catalog) == {}
+    assert gp_rows(catalog) == before
+
+
+def test_short_spacetrack_payload_after_24h_falls_back_to_celestrak(catalog, store):
+    # No prior successful ingest_gp run at all: last_success is None, so the 24h grace
+    # window never applies and a too-short Space-Track payload falls straight through
+    # to CelesTrak within the same run (instead of just failing the run outright).
+    s = Settings(min_satcat_rows=10, min_gp_rows_spacetrack=100, min_gp_rows_celestrak=1)
+    n = run_ingest_gp(
+        catalog, spacetrack=FakeSpaceTrack(ST_SAMPLE), celestrak=FakeCelesTrakGp(SAMPLE),
+        store=store, settings=s, now=NOW,
+    )
+    assert n == 2
+    rows = gp_rows(catalog)
+    assert set(rows) == {25544, 24876}
+    assert rows[25544]["source"] == "celestrak"
+    run = catalog.execute("SELECT * FROM ingest_runs ORDER BY id DESC LIMIT 1").fetchone()
+    assert run["source"] == "celestrak" and run["status"] == "ok"
 
 
 def test_spacetrack_failure_within_24h_keeps_data(catalog, store):
@@ -139,6 +163,41 @@ def test_celestrak_fallback_upserts_without_deleting(catalog, store):
     assert rows[29733]["source"] == "spacetrack"
     run = catalog.execute("SELECT * FROM ingest_runs ORDER BY id DESC LIMIT 1").fetchone()
     assert run["source"] == "celestrak" and run["status"] == "ok"
+
+
+UNMATCHED_ST_SAMPLE = [
+    {
+        "NORAD_CAT_ID": str(900000 + i),
+        "EPOCH": "2026-09-22T00:00:00",
+        "MEAN_MOTION": "15.0",
+        "ECCENTRICITY": "0.001",
+        "INCLINATION": "51.6",
+        "RA_OF_ASC_NODE": "10.0",
+        "ARG_OF_PERICENTER": "10.0",
+        "MEAN_ANOMALY": "10.0",
+        "BSTAR": "0.0001",
+        "MEAN_MOTION_DOT": "0.0",
+        "MEAN_MOTION_DDOT": "0.0",
+    }
+    for i in range(3)
+]
+
+
+def test_spacetrack_write_floor_rolls_back_when_no_objects_match(catalog, store):
+    # Parses fine and clears the row-floor on the parsed payload, but none of these
+    # norad_ids exist in `objects`, so the write (which replaces gp_elements for
+    # Space-Track) would otherwise commit 0 rows and silently wipe the table.
+    run_ingest_gp(
+        catalog, spacetrack=FakeSpaceTrack(ST_SAMPLE), celestrak=FakeCelesTrakGp(SAMPLE),
+        store=store, settings=SETTINGS, now=NOW,
+    )
+    before = gp_rows(catalog)
+    with pytest.raises(SourceError, match="expected at least"):
+        run_ingest_gp(
+            catalog, spacetrack=FakeSpaceTrack(UNMATCHED_ST_SAMPLE),
+            celestrak=FakeCelesTrakGp(SAMPLE), store=store, settings=SETTINGS, now=NOW,
+        )
+    assert gp_rows(catalog) == before
 
 
 def test_no_spacetrack_credentials_uses_celestrak(catalog, store):

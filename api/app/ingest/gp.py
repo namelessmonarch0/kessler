@@ -72,8 +72,17 @@ def parse_gp_csv(text: str) -> list[GpRecord]:
 
 
 def write_gp(
-    conn: psycopg.Connection, records: list[GpRecord], source: str, *, replace: bool
+    conn: psycopg.Connection, records: list[GpRecord], source: str, *, replace: bool,
+    minimum: int | None = None,
 ) -> int:
+    """Writes parsed GP records, matched against known objects.
+
+    When `minimum` is given (the Space-Track replace path), the *written* rowcount is
+    checked against it before the transaction commits: the `WHERE norad_id IN (...)` join
+    can drop far more rows than the parse-level floor ever sees (e.g. GP ingested before
+    the first SATCAT ingest), which would otherwise silently replace gp_elements with an
+    almost-empty table while the run still logs "ok".
+    """
     cols = ", ".join(GP_COLUMNS)
     updates = ", ".join(f"{c} = EXCLUDED.{c}" for c in (*GP_COLUMNS[1:], "source", "fetched_at"))
     with conn.transaction():
@@ -94,15 +103,33 @@ def write_gp(
             ON CONFLICT (norad_id) DO UPDATE SET {updates}
             """
         )
-        return cur.rowcount
+        written = cur.rowcount
+        dropped = len(records) - written
+        if dropped:
+            log.warning("dropped %d GP records for unknown norad_ids", dropped)
+        if minimum is not None and written < minimum:
+            raise SourceError(
+                f"{source} GP write matched only {written} known objects, expected at "
+                f"least {minimum}; keeping previous data"
+            )
+        return written
 
 
 def fetch_gp(
-    conn: psycopg.Connection, spacetrack, celestrak, now: datetime
+    conn: psycopg.Connection, spacetrack, celestrak, now: datetime, min_spacetrack_rows: int
 ) -> tuple[str, list[GpRecord]]:
+    """Fetches GP records, preferring Space-Track. The Space-Track row floor is applied
+    here, inside the try, so a short/garbage payload (no HTTP error, just too few rows)
+    goes through the same last-success/24h fallback rule as an outright fetch failure."""
     if spacetrack is not None:
         try:
-            return "spacetrack", parse_gp_records(spacetrack.gp_all_on_orbit())
+            records = parse_gp_records(spacetrack.gp_all_on_orbit())
+            if len(records) < min_spacetrack_rows:
+                raise SourceError(
+                    f"spacetrack returned {len(records)} GP records, expected at least "
+                    f"{min_spacetrack_rows}; keeping previous data"
+                )
+            return "spacetrack", records
         except SourceError:
             last_ok = last_success(conn, "ingest_gp", "spacetrack")
             if last_ok is not None and now - last_ok < FALLBACK_AFTER:
@@ -122,19 +149,19 @@ def run_ingest_gp(
 ) -> int:
     now = now or datetime.now(UTC)
     with run_log(conn, "ingest_gp") as run:
-        source, records = fetch_gp(conn, spacetrack, celestrak, now)
-        run.source = source
-        minimum = (
-            settings.min_gp_rows_spacetrack
-            if source == "spacetrack"
-            else settings.min_gp_rows_celestrak
+        source, records = fetch_gp(
+            conn, spacetrack, celestrak, now, settings.min_gp_rows_spacetrack
         )
-        if len(records) < minimum:
+        run.source = source
+        if source == "celestrak" and len(records) < settings.min_gp_rows_celestrak:
             raise SourceError(
-                f"{source} returned {len(records)} GP records, expected at least {minimum}; "
-                "keeping previous data"
+                f"celestrak returned {len(records)} GP records, expected at least "
+                f"{settings.min_gp_rows_celestrak}; keeping previous data"
             )
         # Space-Track is the full catalog: replace. CelesTrak is partial: upsert only.
-        run.rows = write_gp(conn, records, source, replace=(source == "spacetrack"))
+        run.rows = write_gp(
+            conn, records, source, replace=(source == "spacetrack"),
+            minimum=settings.min_gp_rows_spacetrack if source == "spacetrack" else None,
+        )
         write_snapshots(conn, store, now)
     return run.rows
