@@ -4,7 +4,7 @@ from app.errors import ApiError
 from app.services.filters import Filters, parse_filters, parse_year_range
 from app.services.stats import OTHER_KEY, _fold_top, breakdown, distribution, timeseries
 from app.stats.rebuild import rebuild_yearly_stats
-from tests.factories import seed_stats_world
+from tests.factories import insert_object, seed_stats_world
 
 ALL = Filters(None, None, None)
 
@@ -88,6 +88,19 @@ def test_distribution_perigee_bins(world):
     r = distribution(world, field="perigee", filters=ALL, bin_width=100)
     assert [(b["key"], b["total"]) for b in r["bins"]] == [("400", 1), ("35700", 1)]
     assert r["bins"][0]["counts"] == {"PAY": 1}
+
+
+def test_distribution_does_not_merge_bins_whose_labels_collide(conn):
+    # Four perigee values 0.0001 apart: `floor(perigee/width)*width` gives 4 distinct
+    # `start` floats that all format to the same 6-sig-fig "g" label ("1234.56"). The
+    # bins must stay separate (grouped by the exact bin, not by the display string) and
+    # each object_type's count must accumulate rather than get clobbered by the next row.
+    for i, perigee in enumerate([1234.5600, 1234.5601, 1234.5602, 1234.5603], start=1):
+        insert_object(conn, i, perigee=perigee, object_type="PAY", owner="US", regime="LEO")
+    r = distribution(conn, field="perigee", filters=ALL, bin_width=0.0001)
+    assert {b["key"] for b in r["bins"]} == {"1234.56"}
+    assert len(r["bins"]) == 4
+    assert all(b["counts"] == {"PAY": 1} and b["total"] == 1 for b in r["bins"])
 
 
 def test_distribution_rcs_categories(world):

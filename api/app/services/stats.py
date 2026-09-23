@@ -94,10 +94,22 @@ def distribution(
             "GROUP BY 1, 2 ORDER BY 1"
         ).format(f=sql.Identifier(field), where=where)
         params = {**params, "w": width}
-    bins: dict[str, dict] = {}
+    # Group by an exact, non-colliding key: for numeric fields the integer bin index
+    # (start / width, always exact by construction), not the display string, which
+    # `:g}` can round two distinct bins into (e.g. "1234.56" for both 1234.5600 and
+    # 1234.5601 at a fine bin_width). counts accumulate with += rather than overwrite,
+    # since a collision could otherwise merge two bins' same-object_type counts.
+    bins: dict[str | float, dict] = {}
     for r in conn.execute(query, params).fetchall():
-        key = r["key"] if field == "rcs_size" else f"{r['start']:g}"
-        b = bins.setdefault(key, {"key": key, "start": r["start"], "counts": {}, "total": 0})
-        b["counts"][r["object_type"]] = int(r["n"])
+        if field == "rcs_size":
+            group_key: str | float = r["key"]
+            display_key = r["key"]
+        else:
+            group_key = round(r["start"] / width)
+            display_key = f"{r['start']:g}"
+        b = bins.setdefault(
+            group_key, {"key": display_key, "start": r["start"], "counts": {}, "total": 0}
+        )
+        b["counts"][r["object_type"]] = b["counts"].get(r["object_type"], 0) + int(r["n"])
         b["total"] += int(r["n"])
     return {"field": field, "bin_width": width, "bins": list(bins.values())}
