@@ -1,0 +1,266 @@
+# LEO Debris: Design Spec
+
+**Date:** 2026-09-22 · **Author:** Kuday Yurter (with Claude) · **Status:** draft for review
+
+## 1. Purpose
+
+Rebuild the award-winning MATLAB app *Space Debris and Objects in LEO*
+(github.com/namelessmonarch0/DebrisInLEO, 1st place; team: Brian Alino, Meena Al Hasani,
+Gregory Maddox, Vedant Patel, Jessica Semaan, Kuday Yurter) as a public website at
+**leo.kudayyurter.dev**.
+
+Goals, in priority order:
+1. **A real data-exploration tool.** It covers all tracked objects and all years (1957 to today), not the
+   original's static 1997–2022 CSVs for three countries.
+2. **A portfolio piece** that looks polished and is understandable at a glance.
+3. **A place to learn applied AI/ML.** v1 has a RAG + tool-calling chatbot (LangChain/LangGraph).
+   A later milestone adds an ML re-entry predictor.
+
+### What the original did, and what changes
+| Original (MATLAB) | New |
+|---|---|
+| CSVs for CN/RU/US, 1997–2022 | Full catalog: ~70k objects, 130 owners, 1957–today, refreshed daily |
+| Counts objects by launch year | Counts by **first-seen year**. Debris is dated by breakup event or catalog entry, not by the parent's launch year (the original over-counted historic debris) |
+| Globe with randomly placed dots | Live globe with real positions from orbital elements (SGP4) |
+| Line and bar charts | Same charts plus launches/re-entries, regimes, breakups, distributions; animated |
+| — | AI analyst: answers from the real data, cites sources, drives the globe |
+
+### Non-goals (v1)
+User accounts; ML re-entry prediction; conjunction/collision screening; re-entry prediction
+feeds (T3); full orbital history (T4); historical-accurate globe positions (the historical
+view shows illustrative positions and says so).
+
+## 2. Architecture
+
+```
+┌─ leo.kudayyurter.dev (Vercel, new project) ────────────────┐
+│ Next.js (App Router) + React Three Fiber + anime.js        │
+│  • Globe: R3F instanced shapes; SGP4 (satellite.js) in a   │
+│    Web Worker; Earth-fixed frame; real-time sun            │
+│  • Charts: SVG (d3-scale/d3-shape) animated with anime.js  │
+│  • Chat panel: SSE stream, applies globe commands          │
+│  • next.config rewrites /api/* → Cloud Run (same origin)   │
+└──────────────────────────┬─────────────────────────────────┘
+┌─ Google Cloud Run ────────▼────────────────────────────────┐
+│ Service: FastAPI (Python 3.12, Docker)                     │
+│   REST stats/objects/globe endpoints + POST /api/chat      │
+│   LangGraph agent (LangChain chat model, provider via env) │
+│ Jobs (Cloud Scheduler): ingest_satcat · ingest_gp ·        │
+│   rebuild_stats · (manual) rag_ingest                      │
+└──────────────────────────┬─────────────────────────────────┘
+┌─ Neon Postgres (free tier) ▼───────────────────────────────┐
+│ objects · gp_elements · owners · launch_sites ·            │
+│ breakup_events · yearly_stats · documents · chunks         │
+│ (pgvector) · ingest_runs · rate_limits                     │
+└────────────────────────────────────────────────────────────┘
+Sources: Space-Track.org (primary, server-side credentials) · CelesTrak (fallback)
+```
+
+**Repo:** new monorepo `namelessmonarch0/leo-debris`: `web/`, `api/`, `docs/`.
+The portfolio repo (kudayyurter.dev) stays separate and links to the subdomain.
+
+### Stack decisions (confirmed)
+- Frontend: **Next.js + React + React Three Fiber (Three.js) + anime.js**, Tailwind v4.
+- Backend: **FastAPI**, **LangChain + LangGraph**, **Postgres + pgvector (Neon)**.
+- Embeddings: **fastembed `BAAI/bge-small-en-v1.5`** (384-d, local, free).
+- LLM: provider-agnostic via `init_chat_model(LLM_MODEL)`. No key yet; the owner will
+  pick a low-cost provider later.
+- Hosting: Vercel (web), Google Cloud Run + Cloud Scheduler (api/jobs), Neon (db).
+
+## 3. Data
+
+### 3.1 Sources and licensing
+- **Space-Track.org** (primary). USSPACECOM gives blanket approval to redistribute basic SSA
+  data (TLE/OMM, SATCAT, decay) **with citation**. Rate limits: under 30 requests/min and under 300/hr.
+  Use bulk queries only, with GP polling at a randomized minute. Credentials stay only in
+  Secret Manager and are used only by the jobs.
+- **CelesTrak** (fallback). SATCAT and the `active` GP group. It has no full-catalog GP (checked
+  2026-09-22: `GROUP=all` is invalid, and `active` covers only ~15.8k of ~28.6k LEO objects), so it is a
+  fallback only.
+- Required site-wide attribution: "Data: USSPACECOM via Space-Track.org; CelesTrak."
+
+### 3.2 Tiers
+- **v1:** T1 full SATCAT (daily) and T2 current GP for all on-orbit objects (every 6 h).
+- **Roadmap:** T3 re-entry predictions (TIP/decay) + SOCRATES close approaches; T4
+  GP_HISTORY (hundreds of millions of rows, for the ML milestone).
+
+### 3.3 Scope
+Ingest **all** objects and regimes. The UI and agent default to LEO. A regime filter exposes
+MEO/GEO/HEO. Regime rules: LEO = apogee < 2,000 km; GEO = perigee 35,000–36,500 km;
+MEO = perigee ≥ 2,000 km and not GEO; HEO = perigee < 2,000 km and apogee ≥ 2,000 km;
+OTHER = non-Earth-centered or missing orbit data. Analyst objects (NORAD ≥ 80000) are excluded.
+
+### 3.4 Schema
+```
+objects          norad_id PK, cospar_id, name, object_type (PAY|R/B|DEB|UNK), ops_status,
+                 owner→owners.code, launch_date, launch_site→launch_sites.code, decay_date,
+                 period, inclination, apogee, perigee, rcs_size (SMALL|MEDIUM|LARGE|NULL),
+                 regime, orbit_center, parent_cospar (first 8 chars of cospar_id),
+                 event_id→breakup_events.id NULL, first_seen_year, updated_at
+gp_elements      norad_id PK→objects, epoch, mean_motion, eccentricity, inclination, raan,
+                 arg_pericenter, mean_anomaly, bstar, mean_motion_dot, mean_motion_ddot,
+                 fetched_at
+owners           code PK, name, country_iso NULL, flag_emoji NULL
+launch_sites     code PK, name, country, lat NULL, lon NULL
+breakup_events   id PK, parent_cospar, name, event_date, kind (ASAT|COLLISION|EXPLOSION|UNKNOWN),
+                 description, source_url                 -- curated seed, ~20 events
+yearly_stats     year, owner, object_type, regime, in_orbit, launched, reentered
+                 PK(year, owner, object_type, regime)    -- rebuilt after each ingest
+documents        id, title, source, url, published_at, license
+chunks           id, document_id→, ord, content, embedding vector(384), tsv tsvector,
+                 metadata jsonb; HNSW(embedding), GIN(tsv)
+ingest_runs      id, job, source, started_at, finished_at, rows, status, error
+rate_limits      key, window_start, count                -- chat limits across instances
+```
+
+### 3.5 Derived-year rule (key correctness fix)
+`first_seen_year = max(launch_year, catalog_year(norad_id))`. `catalog_year` is the running
+max of payload launch dates ordered by NORAD id, since catalog numbers are assigned in order.
+If `event_id` is set, `first_seen_year = year(event_date)`.
+**In orbit at the end of year Y** means `first_seen_year ≤ Y AND (decay_date IS NULL OR year(decay_date) > Y)`.
+Validation reference (computed 2026-09-22 from the live SATCAT, LEO only): debris in orbit
+was 4,115 (2006), 6,453 (2007), 8,744 (2009); payloads overtook debris in 2024
+(11,895 vs 10,486).
+
+### 3.6 Ingest jobs
+| Job | Schedule | Behavior |
+|---|---|---|
+| `ingest_satcat` | daily | 1 bulk Space-Track query, parse with Polars, upsert objects, derive fields |
+| `ingest_gp` | every 6 h at a random minute | 1 bulk query for on-orbit GP, replace gp_elements, write the globe snapshot |
+| `rebuild_stats` | after each ingest | Recompute yearly_stats in one transaction |
+| `rag_ingest` | manual | Fetch corpus, extract, chunk, embed, upsert |
+
+Every job runs in one transaction, so a failure keeps the last good data. Each run is logged to `ingest_runs`.
+If Space-Track has failed for more than 24 h, fall back to CelesTrak.
+
+### 3.7 Globe snapshot
+LEO objects (default) plus a separate MEO/GEO file. Per object: norad_id, type code, owner
+index and the SGP4 inputs. Packed binary (Float32/Uint32 arrays) + gzip, ~2 MB for LEO. Served from
+`/api/globe/snapshot` with an ETag and a 6 h CDN cache.
+
+## 4. API (FastAPI)
+
+All routes are under `/api`, reached from the browser through the Next.js rewrite. Input is Pydantic-validated.
+Errors use the shape `{error:{code,message}}`.
+
+| Endpoint | Purpose | Cache |
+|---|---|---|
+| `GET /meta` | data-as-of timestamps, totals, lists of owners/types/regimes | 10 min |
+| `GET /globe/snapshot?regime=LEO` | packed elements | CDN 6 h |
+| `GET /stats/timeseries` | `metric=in_orbit|launched|reentered`, `group_by=type|owner|regime`, filters `owners,types,regimes,from,to` | 1 h |
+| `GET /stats/breakdown` | `at=YYYY`, `by=owner|type|regime`, filters | 1 h |
+| `GET /stats/distribution` | `field=perigee|apogee|inclination|rcs_size`, filters | 1 h |
+| `GET /events` | breakup events + pieces created / still in orbit | 1 h |
+| `GET /objects/{norad_id}` · `GET /objects/search?q=` | details / search | 10 min |
+| `POST /chat` | agent, SSE | none |
+| `GET /health` | liveness, DB check, ingest age | none |
+
+REST handlers and agent tools share one service layer (`api/app/services/`), so chat
+answers and charts come from identical queries.
+
+## 5. AI analyst
+
+### 5.1 Agent
+A LangGraph `StateGraph` with an agent ⇄ tools loop and at most 6 tool steps per turn. The model comes from
+`init_chat_model(os.environ["LLM_MODEL"])`. If no model or key is configured, `/chat` returns 503
+`chat_offline`. The system prompt keeps the agent on topic (debris, orbits, dataset, space
+policy) and requires numbers to come from tools and facts from retrieved sources.
+
+### 5.2 Tools (typed, parameterized SQL only, never free-form text-to-SQL)
+| Tool | Result |
+|---|---|
+| `count_objects(owners?, types?, regimes?, launched_between?, in_orbit_on?, group_by?)` | counts |
+| `time_series(metric, owners?, types?, regimes?, years, group_by?)` | series; also emits a `chart` event |
+| `get_object(name_or_norad)` | details |
+| `list_breakup_events(...)` | events + remaining pieces |
+| `search_knowledge(query)` | hybrid RAG: pgvector + full-text, RRF fusion, top 5 with citations |
+| `globe_filter(...)`, `globe_focus(norad_id or parent_cospar)`, `globe_set_time(date)` | emit a `globe` command event (UI side effect) |
+
+### 5.3 Streaming protocol (SSE)
+`token` · `status` · `globe` {command} · `chart` {spec} · `citations` [...] · `error` · `done`
+
+### 5.4 Knowledge corpus
+NASA ODPO Orbital Debris Quarterly News + FAQ (public domain); ESA Space Environment Report
+(cited); IADC mitigation guidelines; Wikipedia (CC BY-SA) on the Kessler syndrome, Fengyun-1C,
+Iridium–Cosmos and Kosmos 1408; the original MATLAB project text. Chunks are ~800 tokens with overlap,
+embedded with fastembed. Each chunk stores its source URL and license.
+
+### 5.5 Abuse and cost controls
+Per-IP limit of 20 messages/hour and a global daily cap (Postgres `rate_limits`); inputs up to 1,000 characters; capped
+output tokens. The server stores no chat history; the client sends the last 8 turns.
+
+### 5.6 Evaluation
+~30 questions with known answers. Tool-level correctness always runs in pytest.
+End-to-end answer quality runs when a key is present, with optional LangSmith tracing.
+
+## 6. Frontend
+
+### 6.1 Decided
+- Pages: `/` explorer (full-screen globe + panels), `/about` (original project, team,
+  award, methodology, data attribution), link back to kudayyurter.dev.
+- **Visual direction: black and clean, cartoonish but professional.** Sticker-like cards
+  (2px borders, hard offset shadows), custom 8×8 **pixel icons**, **Departure Mono** (OFL,
+  self-hosted with `next/font/local`) for numbers and labels, a clean sans (Inter Tight) for body text.
+- **Globe look:** flat cartoon Earth with two colors (ocean and land from Natural Earth coastlines),
+  ink coastlines and a rim glow. **Terminator from the real Sun** (NOAA subsolar formulas,
+  Earth-fixed frame), with a smooth, graduated, lightly dithered twilight band (~18°).
+  An optional subtle post-process ordered dither + grain (style reference:
+  x.com/_madebygray/status/2101463932158566699).
+- **Object shapes by type:** satellite (body + panels), rocket body (cylinder + cone),
+  debris (tumbling jagged shard). Screen size grows as the camera zooms in
+  (`size ∝ dist^0.55`), so shapes become readable up close.
+- **Color by entity, fixed everywhere:** payload `#3987e5`, debris `#d95926`,
+  rocket body `#199e70` (colorblind-validated all-pairs on the dark surface).
+- **Charts:** titled with the takeaway; direct end labels plus a legend; event annotations
+  (2007, 2009, 2019, 2021); hover crosshair/tooltips; draw-in on scroll with anime.js.
+- **Motion:** anime.js for everything: intro stagger, counters, chart draw-in, camera
+  fly-tos (incl. agent `globe_focus`), highlight pulses, drag inertia.
+- **Globe engine:** R3F (InstancedMesh per type; SGP4 in a Web Worker transferring a
+  Float32Array ~10 Hz; interpolation on the main thread), styled flat like the 2D mock.
+  Fallback if WebGL is unavailable: charts-only view.
+- State: a single Zustand store (filters, time, selection, chat) shared by the UI, globe and agent
+  commands.
+
+### 6.2 Open (to revisit after the backend)
+Final palette (Classic/Night/Atlas/Mono), dither level and shading (cel vs smooth), whether
+Departure Mono is used everywhere or only for labels, and whether to reconsider a pure-2D globe. Prototypes
+are in `.superpowers/brainstorm/` (globe-sun.html, globe-anime.html, globe-2d-smooth.html).
+
+## 7. Error handling
+- API: 422 for invalid filters (readable message); 404 for unknown objects; 503
+  `chat_offline`; 429 with `Retry-After` for rate limits; tool failures become an SSE `error` and
+  the agent says it could not fetch the data, never invents it.
+- Ingest: all-or-nothing transactions; last good data is served; staleness shows in `/meta`
+  and the UI ("data as of …").
+- Web: an error boundary around the globe; skeleton states for charts; the chat shows offline and
+  rate-limit states.
+
+## 8. Testing
+- **api (pytest):** parser tests against saved Space-Track/CelesTrak samples; first-seen-year
+  and in-orbit math against hand-computed cases (parent-launch debris, single-year range,
+  decay in the same year); endpoint tests on testcontainers Postgres + pgvector; agent tools
+  with a scripted fake LLM (no key); the eval set when a key is present.
+- **web:** Vitest for data transforms and SGP4 propagation (reference position check);
+  Playwright smoke test (globe canvas renders, charts render, object card opens).
+- **CI:** GitHub Actions runs lint, type checks and both suites on PRs.
+
+## 9. Deployment
+- Vercel project for `web/`, domain `leo.kudayyurter.dev`. The owner adds a CNAME
+  `leo → cname.vercel-dns.com` at the external registrar.
+- Cloud Run service + 3 Cloud Run Jobs + Cloud Scheduler, deployed by GitHub Actions
+  (Workload Identity Federation, no long-lived keys). Secrets in Secret Manager:
+  `DATABASE_URL`, `SPACETRACK_USER`, `SPACETRACK_PASS`, later `LLM_MODEL` + provider key.
+- Neon free tier (0.5 GB; expected usage 60–80 MB).
+- Owner one-time setup: GCP project with billing + budget alert, Neon account, DNS record.
+
+## 10. Build order
+1. **Data:** schema + migrations (Alembic), ingest jobs, stats, REST API, tests.
+2. **Web:** globe and charts on real API data.
+3. **AI:** RAG corpus + LangGraph agent + SSE chat (works up to the LLM call without a key).
+4. **Deploy:** subdomain, Cloud Run, schedulers.
+5. **Polish:** resolve §6.2, anime.js choreography, About page.
+
+## 11. Roadmap (post-v1)
+T3 feeds (re-entries this week, top close approaches); T4 history + **ML re-entry
+predictor** (Python service, compared against physics-only estimates); historical globe
+replays; saved views (would need auth).
