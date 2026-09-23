@@ -7,6 +7,22 @@ export function shortestAngle(from: number, to: number): number {
   return Math.atan2(Math.sin(d), Math.cos(d));
 }
 
+export type Locator = (id: number) => THREE.Vector3 | null;
+
+/**
+ * Finds the first non-null position across a set of locator functions, one per object group
+ * (e.g. LEO, HIGH). The set can be sparse — a group whose snapshot hasn't loaded (or failed)
+ * yet leaves a hole rather than a function — so holes are skipped instead of called.
+ */
+export function findPosition(locators: readonly (Locator | undefined)[], id: number): THREE.Vector3 | null {
+  for (const find of locators) {
+    if (!find) continue;
+    const p = find(id);
+    if (p) return p;
+  }
+  return null;
+}
+
 /** Arcs the camera around the globe (never through it) to look at `target` from `distance`. */
 export function flyTo(
   camera: THREE.PerspectiveCamera,
