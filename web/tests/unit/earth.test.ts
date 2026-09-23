@@ -33,4 +33,10 @@ describe("hasWebGL", () => {
     const ok = { createElement: () => ({ getContext: (k: string) => (k === "webgl2" ? {} : null) }) } as unknown as Pick<Document, "createElement">;
     expect(hasWebGL(ok)).toBe(true);
   });
+  it("returns false when only a WebGL1 context is available (three 0.186 requires WebGL2)", () => {
+    const webgl1Only = {
+      createElement: () => ({ getContext: (k: string) => (k === "webgl" ? {} : null) }),
+    } as unknown as Pick<Document, "createElement">;
+    expect(hasWebGL(webgl1Only)).toBe(false);
+  });
 });
