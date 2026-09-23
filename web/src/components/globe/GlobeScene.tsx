@@ -15,7 +15,19 @@ import { Earth } from "@/components/globe/Earth";
 import { findPosition, flyTo, type Locator } from "@/components/globe/flyTo";
 import { Objects } from "@/components/globe/Objects";
 
+declare global {
+  interface Window {
+    /** Test-only hook: set before navigation to force the globe's render tree to throw, so
+     * GlobeErrorBoundary's fallback path can be exercised end-to-end. Read only outside
+     * production (see below) — this flag has no effect in a production build. */
+    __LEO_FORCE_GLOBE_ERROR__?: boolean;
+  }
+}
+
 export function GlobeScene({ leo, high }: { leo: OrbitRecord[] | null; high: OrbitRecord[] | null }) {
+  if (process.env.NODE_ENV !== "production" && typeof window !== "undefined" && window.__LEO_FORCE_GLOBE_ERROR__) {
+    throw new Error("Forced globe error (test-only, via window.__LEO_FORCE_GLOBE_ERROR__)");
+  }
   const camera = useThree((s) => s.camera) as THREE.PerspectiveCamera;
   const sun = useRef<THREE.DirectionalLight>(null);
   const controls = useRef<OrbitControlsImpl>(null);

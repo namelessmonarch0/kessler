@@ -93,3 +93,57 @@ test("about page credits the team", async ({ page }) => {
   await page.goto("/about");
   await expect(page.getByText(/Jessica Semaan/)).toBeVisible();
 });
+
+test("a broken globe render falls back without breaking the rest of the page", async ({ page }) => {
+  const errors = trackErrors(page);
+  // Test-only hook read by GlobeScene (see web/src/components/globe/GlobeScene.tsx), gated to
+  // development/test builds — forces the R3F render tree to throw so GlobeErrorBoundary's
+  // fallback path can be exercised end-to-end, the way a real WebGL/shader/driver failure would.
+  await page.addInitScript(() => {
+    (window as unknown as { __LEO_FORCE_GLOBE_ERROR__?: boolean }).__LEO_FORCE_GLOBE_ERROR__ = true;
+  });
+  await mockApi(page);
+  await page.goto("/");
+  await expect(page.getByText(/This device can.t show the 3D globe \(WebGL is unavailable\)/)).toBeVisible({ timeout: 10_000 });
+  await expect(page.locator("canvas")).toHaveCount(0);
+  // The rest of the page must still work: tiles and charts render, nothing else crashed.
+  await expect(page.getByTestId("tile-PAY")).toContainText("17,750");
+  await page.getByRole("img", { name: "Objects in orbit per year by type" }).scrollIntoViewIfNeeded();
+  await expect(page.locator("path[data-series]")).toHaveCount(3);
+  // React's development-mode error-boundary machinery (invokeGuardedCallback) deliberately
+  // re-surfaces a caught render error to the browser console/devtools for stack-trace fidelity —
+  // https://github.com/facebook/react/issues/10474 — which Playwright's `pageerror` listener also
+  // observes, even though GlobeErrorBoundary genuinely caught it (already proven by the fallback
+  // text, the missing canvas, and the rest of the page rendering above). This is development-only
+  // noise (next dev is what this whole e2e suite runs against), not a real escape past the
+  // boundary; assert it is *exactly* the one forced error and nothing else broke.
+  expect(errors).toEqual(["Forced globe error (test-only, via window.__LEO_FORCE_GLOBE_ERROR__)"]);
+});
+
+test("ignores a stale timeseries response when filters change before it arrives", async ({ page }) => {
+  const errors = trackErrors(page);
+  const full = JSON.parse(fx("api/timeseries.json").toString()) as { series: { key: string }[] };
+  let calls = 0;
+  await mockApi(page);
+  // Registered *after* mockApi's catch-all so it takes priority (Playwright tries the
+  // most-recently-registered matching route first). The first request (the page's initial,
+  // unfiltered load) resolves slowly; a request made after toggling a filter resolves fast.
+  // Without the `cancelled` guard in page.tsx, the slow first response arriving later would
+  // overwrite the correctly-filtered fast one.
+  await page.route("**/api/stats/timeseries**", async (route) => {
+    calls += 1;
+    const isFirst = calls === 1;
+    const url = new URL(route.request().url());
+    const types = (url.searchParams.get("types") ?? "PAY,R/B,DEB,UNK").split(",");
+    const body = { ...full, series: full.series.filter((s) => types.includes(s.key)) };
+    await new Promise((r) => setTimeout(r, isFirst ? 700 : 30));
+    await route.fulfill({ status: 200, body: JSON.stringify(body), contentType: "application/json" });
+  });
+  await page.goto("/");
+  await expect(page.locator("path[data-series]")).toHaveCount(3, { timeout: 10_000 });
+  await page.getByRole("button", { name: "Debris" }).click(); // drops DEB from `types` -> 2 series, fast response
+  await expect(page.locator("path[data-series]")).toHaveCount(2, { timeout: 5_000 });
+  await page.waitForTimeout(900); // outlive the slow first (unfiltered) response
+  await expect(page.locator("path[data-series]")).toHaveCount(2); // must still be 2, not reverted to 3
+  expect(errors).toEqual([]);
+});

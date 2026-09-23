@@ -1,14 +1,17 @@
 "use client";
 
 import { Canvas } from "@react-three/fiber";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { simClock } from "@/lib/clock";
 import { loadSnapshot, type OrbitRecord } from "@/lib/snapshot";
 import { useExplorer } from "@/lib/store";
 import { subsolarPoint } from "@/lib/sun";
+import { GlobeErrorBoundary } from "@/components/globe/GlobeErrorBoundary";
 import { GlobeScene } from "@/components/globe/GlobeScene";
 import { hasWebGL } from "@/components/globe/webgl";
+
+const NO_WEBGL_MESSAGE = "This device can't show the 3D globe (WebGL is unavailable). Charts and search still work.";
 
 type Status = "loading" | "ready" | "missing" | "error";
 
@@ -53,9 +56,16 @@ export function GlobeSection() {
   const [leo, setLeo] = useState<OrbitRecord[] | null>(null);
   const [high, setHigh] = useState<OrbitRecord[] | null>(null);
   const [status, setStatus] = useState<Status>("loading");
+  const [renderFailed, setRenderFailed] = useState(false);
+  const [contextLost, setContextLost] = useState(false);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const wantHigh = useExplorer((s) => s.orbits.high);
   const timeScale = useExplorer((s) => s.timeScale);
   const setTimeScale = useExplorer((s) => s.setTimeScale);
+  // True once WebGL is unavailable for any reason: no support at all, the R3F render tree threw
+  // (caught by GlobeErrorBoundary), or the GPU context was lost after the canvas mounted. All
+  // three show the same fallback message in place of the globe.
+  const broken = webgl === false || renderFailed || contextLost;
 
   // WebGL support can only be probed client-side (needs `document`); deferring to an effect
   // (instead of a lazy useState initializer) keeps the SSR/hydration pass identical, at the cost
@@ -82,25 +92,42 @@ export function GlobeSection() {
     fetchGroup("HIGH").then(setHigh).catch(() => undefined);
   }, [wantHigh, high]);
 
+  // webglcontextlost is a native browser event (GPU reset, driver crash, too many contexts),
+  // not a thrown error, so GlobeErrorBoundary can't see it — listen on the canvas directly and
+  // fall back to the same no-WebGL message instead of leaving a blank/frozen card.
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!webgl || !canvas) return;
+    const onLost = (e: Event) => {
+      e.preventDefault();
+      setContextLost(true);
+    };
+    canvas.addEventListener("webglcontextlost", onLost);
+    return () => canvas.removeEventListener("webglcontextlost", onLost);
+  }, [webgl]);
+
   return (
     <section className="card relative h-[420px] overflow-hidden sm:h-[560px]" aria-label="Live globe of tracked objects">
-      {webgl && (
-        <Canvas
-          style={{ position: "absolute", inset: 0 }}
-          camera={{ position: [0.6, 0.9, 3.6], fov: 40, near: 0.005, far: 100 }}
-          dpr={[1, 2]}
-          gl={{ antialias: true }}
-        >
-          <color attach="background" args={["#000000"]} />
-          <GlobeScene leo={leo} high={high} />
-        </Canvas>
+      {webgl && !broken && (
+        <GlobeErrorBoundary onError={() => setRenderFailed(true)}>
+          <Canvas
+            ref={canvasRef}
+            style={{ position: "absolute", inset: 0 }}
+            camera={{ position: [0.6, 0.9, 3.6], fov: 40, near: 0.005, far: 100 }}
+            dpr={[1, 2]}
+            gl={{ antialias: true }}
+          >
+            <color attach="background" args={["#000000"]} />
+            <GlobeScene leo={leo} high={high} />
+          </Canvas>
+        </GlobeErrorBoundary>
       )}
       <div className="pointer-events-none absolute left-4 top-3 right-4 flex flex-col gap-1">
-        <Readout live={webgl === true} />
-        {webgl === false && <p className="text-sm text-ink-2">This device can&apos;t show the 3D globe (WebGL is unavailable). Charts and search still work.</p>}
-        {webgl && status === "loading" && <p className="label">Loading orbits…</p>}
-        {webgl && status === "missing" && <p className="text-sm text-ink-2">Orbit data not available yet.</p>}
-        {webgl && status === "error" && <p className="text-sm text-ink-2">Data unavailable. The Earth is shown without objects.</p>}
+        <Readout live={webgl === true && !broken} />
+        {broken && <p className="text-sm text-ink-2">{NO_WEBGL_MESSAGE}</p>}
+        {webgl && !broken && status === "loading" && <p className="label">Loading orbits…</p>}
+        {webgl && !broken && status === "missing" && <p className="text-sm text-ink-2">Orbit data not available yet.</p>}
+        {webgl && !broken && status === "error" && <p className="text-sm text-ink-2">Data unavailable. The Earth is shown without objects.</p>}
       </div>
       <div className="absolute bottom-3 left-4 flex gap-2">
         {([1, 4320] as const).map((s) => (
