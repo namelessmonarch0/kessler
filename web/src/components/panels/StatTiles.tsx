@@ -25,9 +25,9 @@ function Tile({ value, index, ...t }: (typeof TILES)[number] & { value: number; 
     };
   }, [value, index]);
   return (
-    <div className="card p-4" data-testid={`tile-${t.type}`}>
+    <div className="card p-3 sm:p-4" data-testid={`tile-${t.type}`}>
       <div className="flex items-center gap-2 text-[13px] text-ink-2"><PixelIcon name={t.icon} color={t.color} />{t.label}</div>
-      <div ref={ref} className="mt-2 font-mono text-[28px] text-ink">0</div>
+      <div ref={ref} className="mt-2 font-mono text-[21px] tabular-nums text-ink sm:text-[28px]">0</div>
       <div className="mt-1 text-[12px] text-ink-3">{t.sub}</div>
     </div>
   );

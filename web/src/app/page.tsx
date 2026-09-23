@@ -70,7 +70,7 @@ export default function Explorer() {
         </div>
       </div>
       <div className="mt-5 grid gap-5 lg:grid-cols-[1.35fr_0.65fr]">
-        <Card aria-label="History chart" className="min-w-0">
+        <Card aria-label="History chart" className="min-w-0 self-start">
           <h2 className="font-mono text-[18px] text-ink">{ts.data ? chartTitle(ts.data) : "Objects in orbit by type"}</h2>
           <p className="mt-1 text-[13px] leading-snug text-ink-2">
             Objects in orbit at the end of each year. Collisions and anti-satellite tests caused the debris jumps;

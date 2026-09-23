@@ -8,10 +8,10 @@ import { ANNOTATIONS, visibleTypeSeries } from "@/lib/chartData";
 import { fmtInt } from "@/lib/format";
 import { prefersReducedMotion } from "@/lib/motion";
 import { TYPE_COLORS, TYPE_LABELS, type TimeseriesResponse } from "@/lib/types";
-import { layoutAnnotations, niceMax, tooltipPosition, yearTicks, yTicks } from "@/components/charts/scales";
+import { CHAR_W, layoutAnnotations, niceMax, tooltipPosition, yearTicks, yTicks } from "@/components/charts/scales";
 
 const H = 330;
-const M = { t: 30, r: 118, b: 28, l: 52 };
+const M_BASE = { t: 30, r: 118, b: 28 };
 const ANNOT_ROW_H = 14;
 
 export function LineChart({ data }: { data: TimeseriesResponse }) {
@@ -39,13 +39,19 @@ export function LineChart({ data }: { data: TimeseriesResponse }) {
 
   const series = visibleTypeSeries(data);
   const years = data.years;
+  // Left margin sized from the widest formatted y-tick label (e.g. "20,000"), not a fixed guess —
+  // a fixed 52px margin clipped the leading glyph of 6-character labels at Departure Mono's
+  // measured advance width (CHAR_W ≈ 7.64px/char).
+  const yMax = niceMax(Math.max(1, ...series.flatMap((s) => s.values)));
+  const yTickValues = yTicks(yMax);
+  const maxTickLen = Math.max(0, ...yTickValues.map((t) => fmtInt(t).length));
+  const M = { ...M_BASE, l: Math.ceil(maxTickLen * CHAR_W) + 14 };
   const x = scaleLinear().domain([years[0], years[years.length - 1]]).range([M.l, width - M.r]);
   const narrow = width < 520;
   const annotationItems = narrow ? [] : ANNOTATIONS.filter((a) => a.year >= years[0] && a.year <= years[years.length - 1]);
   const laidOutAnnotations = layoutAnnotations(annotationItems, (yr) => x(yr), M.l, width - M.r);
   const maxAnnotationRow = laidOutAnnotations.reduce((m, a) => Math.max(m, a.row), 0);
   const top = M.t + maxAnnotationRow * ANNOT_ROW_H;
-  const yMax = niceMax(Math.max(1, ...series.flatMap((s) => s.values)));
   const y = scaleLinear().domain([0, yMax]).range([H - M.b, top]);
   const path = line<number>().x((_, i) => x(years[i])).y((v) => y(v)).curve(curveMonotoneX);
 
@@ -92,7 +98,7 @@ export function LineChart({ data }: { data: TimeseriesResponse }) {
         ))}
       </div>
       <svg ref={svg} width={width} height={H} role="img" aria-label="Objects in orbit per year by type" className="block max-w-full">
-        {yTicks(yMax).map((t) => (
+        {yTickValues.map((t) => (
           <g key={t}>
             <line x1={M.l} x2={width - M.r} y1={y(t)} y2={y(t)} stroke="#1e1e1e" />
             <text x={M.l - 8} y={y(t) + 4} textAnchor="end" className="fill-ink-3 font-mono text-[12px]">
