@@ -41,6 +41,32 @@ body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased; }
   padding: 14px;
 }
 
+.globe-label {
+  position: absolute;
+  pointer-events: auto;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 14px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.55);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.globe-label::before {
+  content: "";
+  position: absolute;
+  left: -8px;
+  bottom: -8px;
+  width: 9px;
+  height: 1px;
+  background: currentColor;
+  transform: rotate(-45deg);
+  transform-origin: right;
+}
+[data-testid="globe-labels"] { opacity: 0; transition: opacity 200ms; }
+[data-testid="globe-labels"][data-active="1"] { opacity: 1; }
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
 }

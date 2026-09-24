@@ -12,7 +12,8 @@ import { useExplorer } from "@/lib/store";
 import { sunDirectionScene } from "@/lib/sun";
 import { Earth } from "@/components/globe/Earth";
 import { findPosition, flyTo, type Locator } from "@/components/globe/flyTo";
-import { Objects } from "@/components/globe/Objects";
+import { LabelDriver } from "@/components/globe/LabelDriver";
+import { Objects, type LabelSource } from "@/components/globe/Objects";
 
 declare global {
   interface Window {
@@ -36,7 +37,7 @@ export function GlobeScene({
    * down to each Objects/usePropagation instance to pause the propagation worker's tick
    * interval while nothing is rendering the results. */
   active?: boolean;
-  /** DOM overlay for object labels, filled in by Task 7. Unused here. */
+  /** DOM overlay for object labels — filled by LabelDriver below. */
   labelsRef?: React.RefObject<HTMLDivElement | null>;
   /** GlobeSection's outer <section>. Written to (not read) here — a throttled `data-earth-cy`
    * attribute exposing the Earth's current projected screen Y, in CSS px, so tests can verify the
@@ -57,6 +58,9 @@ export function GlobeScene({
   // Sparse: index 0 = LEO, 1 = HIGH. A group whose snapshot hasn't loaded (or errored) yet
   // leaves a hole here rather than a function — findPosition skips holes instead of calling them.
   const locators = useRef<(Locator | undefined)[]>([]);
+  // Sparse by group index (0 = LEO, 1 = HIGH), same convention as `locators` above — fed by
+  // Objects' onLabelSource and read every tick by LabelDriver.
+  const labelSources = useRef<(LabelSource | undefined)[]>([]);
   // Guards the initial camera-position effect below so it only ever runs once, even though it now
   // has to wait for a real dependency (the sheet's measured top) rather than firing unconditionally
   // at mount.
@@ -119,6 +123,8 @@ export function GlobeScene({
 
   const onReadyLeo = useCallback((f: Locator) => (locators.current[0] = f), []);
   const onReadyHigh = useCallback((f: Locator) => (locators.current[1] = f), []);
+  const onLeoLabels = useCallback((s: LabelSource | null) => (labelSources.current[0] = s ?? undefined), []);
+  const onHighLabels = useCallback((s: LabelSource | null) => (labelSources.current[1] = s ?? undefined), []);
 
   // Starts past the threshold so the very first frame writes immediately (tests don't have to
   // wait out a full throttle interval before the attribute exists at all).
@@ -145,9 +151,10 @@ export function GlobeScene({
       <ambientLight intensity={0.35} />
       <directionalLight ref={sun} intensity={2.2} />
       <Earth />
-      {leo && <Objects records={leo} group="LEO" onReady={onReadyLeo} active={active} />}
-      {high && <Objects records={high} group="HIGH" onReady={onReadyHigh} active={active} />}
+      {leo && <Objects records={leo} group="LEO" onReady={onReadyLeo} active={active} onLabelSource={onLeoLabels} />}
+      {high && <Objects records={high} group="HIGH" onReady={onReadyHigh} active={active} onLabelSource={onHighLabels} />}
       <OrbitControls ref={controls} enableDamping enablePan={false} minDistance={1.12} maxDistance={12} zoomSpeed={0.8} />
+      {labelsRef && <LabelDriver sources={labelSources} container={labelsRef} />}
     </>
   );
 }

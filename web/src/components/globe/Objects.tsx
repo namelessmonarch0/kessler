@@ -7,9 +7,11 @@ import { simClock } from "@/lib/clock";
 import type { OrbitRecord } from "@/lib/snapshot";
 import { isVisible, useExplorer } from "@/lib/store";
 import { GLOBE_COLORS, type ObjectType } from "@/lib/types";
-import { usePropagation } from "@/components/globe/usePropagation";
+import { usePropagation, type PropagationFrames } from "@/components/globe/usePropagation";
 import { initBoundingSphere, interpolate, objectSize, writeInstance } from "@/components/globe/instances";
 import { createDebrisGeometry, createRocketBodyGeometry, createSatelliteGeometry } from "@/components/globe/objectGeometries";
+
+export type LabelSource = { group: "LEO" | "HIGH"; records: OrbitRecord[]; visible: boolean[]; frames: PropagationFrames };
 
 type Kind = "sat" | "rb" | "deb";
 const kindOf = (t: ObjectType): Kind => (t === "PAY" ? "sat" : t === "R/B" ? "rb" : "deb");
@@ -28,6 +30,7 @@ export function Objects({
   group,
   onReady,
   active = true,
+  onLabelSource,
 }: {
   records: OrbitRecord[];
   group: "LEO" | "HIGH";
@@ -35,6 +38,9 @@ export function Objects({
   /** Whether the globe is visible/foregrounded — see GlobeSection/GlobeScene. Pauses the
    * propagation worker's tick interval while false. */
   active?: boolean;
+  /** Reports this group's live records/visibility/frames for LabelDriver to read from — see
+   * GlobeScene, which fans these into a `labelSources` ref by group index. */
+  onLabelSource?: (s: LabelSource | null) => void;
 }) {
   const frames = usePropagation(records, active);
   const camera = useThree((s) => s.camera);
@@ -128,6 +134,11 @@ export function Objects({
       return i !== undefined && interpolate(frames.current, simClock.now(), i, v) ? v : null;
     });
   }, [indexById, frames, onReady]);
+
+  useEffect(() => {
+    onLabelSource?.({ group, records, visible, frames });
+    return () => onLabelSource?.(null);
+  }, [group, records, visible, frames, onLabelSource]);
 
   useFrame(() => {
     const now = simClock.now();

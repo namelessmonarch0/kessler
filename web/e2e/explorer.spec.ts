@@ -63,6 +63,35 @@ test("search opens the object card", async ({ page }) => {
   await expect(page.getByTestId("object-card")).toContainText("International Space Station partners");
 });
 
+test("zooming in on a searched object shows name labels near the centre; clicking one opens its card", async ({ page }) => {
+  await mockApi(page);
+  await page.goto("/");
+  const canvas = page.locator("canvas");
+  await expect(canvas).toBeVisible();
+  // Fly to ISS via search rather than wheel-zooming at the canvas centre: the snapshot fixture
+  // has only 2 objects, so a blind zoom can leave both off-screen depending on where the globe
+  // happens to be facing (flaky). flyTo brings the camera to ~1.5 Earth radii, below the 2.2
+  // SHOW_BELOW threshold, looking straight at ISS.
+  await page.getByLabel("Find an object").fill("ISS");
+  await page.getByRole("button", { name: /ISS \(ZARYA\)/ }).click();
+  const labelsContainer = page.getByTestId("globe-labels");
+  const labels = labelsContainer.locator("button");
+  const issLabel = labels.filter({ hasText: "ISS (ZARYA)" });
+  await expect(issLabel.first()).toBeVisible({ timeout: 15_000 });
+  expect(await labels.count()).toBeLessThanOrEqual(12);
+  await issLabel.first().click();
+  await expect(page.getByTestId("object-card")).toBeVisible();
+  // Zoom back out with the mouse wheel over the canvas until labels deactivate and clear. Hover
+  // a corner rather than dead centre: the ISS label sits right over the canvas centre (the
+  // camera looks straight at it after flyTo) and, being pointer-events:auto, would otherwise
+  // swallow the wheel events meant for OrbitControls.
+  const box = (await canvas.boundingBox())!;
+  await page.mouse.move(box.x + 40, box.y + 40);
+  for (let i = 0; i < 80; i++) await page.mouse.wheel(0, 400);
+  await expect(labelsContainer).toHaveAttribute("data-active", "0", { timeout: 15_000 });
+  expect(await labels.count()).toBe(0);
+});
+
 test("survives API failure", async ({ page }) => {
   const errors = trackErrors(page);
   await mockApi(page, { "/": { status: 500 } });
