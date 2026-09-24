@@ -14,7 +14,21 @@ export type WeeklyResult = {
 
 export type HistoryEntry = { weekOf: string; pass: boolean; mathMaxKm: number | null; issMaxKm: number | null };
 
+/** Builds a week's `HistoryEntry` by looking up its checks by name, not position. */
+export function historyEntryFor(result: WeeklyResult): HistoryEntry {
+  return {
+    weekOf: result.weekOf,
+    pass: result.pass,
+    mathMaxKm: result.checks.find((c) => c.name.startsWith("Math"))!.value,
+    issMaxKm: result.checks.find((c) => c.name.startsWith("ISS ground"))!.value,
+  };
+}
+
 type InputDay = { date: string; raw: string | null };
+
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null;
+}
 
 /** Parses a day's raw JSON and validates it looks like a `DailyResult`, or returns null. */
 function parseDay(raw: string | null): DailyResult | null {
@@ -25,9 +39,13 @@ function parseDay(raw: string | null): DailyResult | null {
   } catch {
     return null;
   }
-  if (typeof parsed !== "object" || parsed === null) return null;
-  const p = parsed as Record<string, unknown>;
-  if (!("date" in p) || !("byType" in p) || !("age" in p) || !("iss" in p)) return null;
+  if (!isPlainObject(parsed)) return null;
+  const p = parsed;
+  if (typeof p.date !== "string") return null;
+  if (!isPlainObject(p.byType)) return null;
+  if (!isPlainObject(p.byRegime)) return null;
+  if (!isPlainObject(p.age) || typeof p.age.staleShare !== "number") return null;
+  if (p.iss !== null && !isPlainObject(p.iss)) return null;
   return p as unknown as DailyResult;
 }
 
@@ -144,7 +162,7 @@ export function renderMarkdown(result: WeeklyResult, history: HistoryEntry[]): s
   lines.push("");
   lines.push("| Week of | Result | Math max (km) | ISS max (km) |");
   lines.push("|---|---|---|---|");
-  const thisWeek: HistoryEntry = { weekOf: result.weekOf, pass: result.pass, mathMaxKm: result.checks[0].value, issMaxKm: result.checks[1].value };
+  const thisWeek = historyEntryFor(result);
   const trend = history
     .filter((h) => h.weekOf !== result.weekOf)
     .concat([thisWeek])

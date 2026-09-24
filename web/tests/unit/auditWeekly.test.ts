@@ -42,6 +42,28 @@ describe("evaluateWeek", () => {
     const r = evaluateWeek(week(Object.fromEntries(["2026-09-21", "2026-09-22"].map((d) => [d, { iss: null }]))));
     expect(r.pass).toBe(true);
   });
+  it("treats a day missing byRegime, or with byType null, as missing rather than throwing", () => {
+    const days = week();
+    const noByRegime = JSON.parse(days[0].raw!);
+    delete noByRegime.byRegime;
+    days[0].raw = JSON.stringify(noByRegime);
+    days[1].raw = day("2026-09-22", { byType: null });
+    expect(() => evaluateWeek(days)).not.toThrow();
+    const r = evaluateWeek(days);
+    expect(r.missing).toEqual(["2026-09-21", "2026-09-22"]);
+  });
+  it("fails the ISS ground check when there are 0 ISS days and only 3 days present", () => {
+    const days = week(Object.fromEntries(["2026-09-21", "2026-09-22", "2026-09-23", "2026-09-24", "2026-09-25", "2026-09-26", "2026-09-27"].map((d) => [d, { iss: null }])));
+    days[0].raw = null;
+    days[1].raw = null;
+    days[2].raw = null;
+    days[3].raw = null;
+    const r = evaluateWeek(days);
+    expect(r.present.length).toBe(3);
+    const issCheck = r.checks.find((c) => c.name.startsWith("ISS ground"))!;
+    expect(issCheck.value).toBeNull();
+    expect(issCheck.pass).toBe(false);
+  });
 });
 
 describe("planIssueAction / renderMarkdown", () => {

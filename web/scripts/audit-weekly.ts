@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { evaluateWeek, planIssueAction, renderMarkdown, type HistoryEntry } from "./accuracy/weekly";
+import { evaluateWeek, historyEntryFor, planIssueAction, renderMarkdown, type HistoryEntry } from "./accuracy/weekly";
 
 function parseArgs(argv: string[]): Record<string, string> {
   const out: Record<string, string> = {};
@@ -81,12 +81,7 @@ async function main(): Promise<void> {
 
   const existingHistory = readHistory(historyPath);
   const priorHistory = existingHistory.filter((h) => h.weekOf !== result.weekOf);
-  const thisWeek: HistoryEntry = {
-    weekOf: result.weekOf,
-    pass: result.pass,
-    mathMaxKm: result.checks[0].value,
-    issMaxKm: result.checks[1].value,
-  };
+  const thisWeek = historyEntryFor(result);
   const updatedHistory = [...priorHistory, thisWeek].sort((a, b) => a.weekOf.localeCompare(b.weekOf));
 
   const md = renderMarkdown(result, priorHistory);
