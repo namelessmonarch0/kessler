@@ -301,14 +301,24 @@ Prototypes remain in `.superpowers/brainstorm/` (globe-sun.html, globe-anime.htm
 - CI builds into the ECR repository `leo-api` (keeps the newest 10 images); Neon migrations
   run through the `migrate` job rather than a separate deploy step.
 - `LeoRegistryStack` grants `lambda.amazonaws.com` `ecr:BatchGetImage` and
-  `ecr:GetDownloadUrlForLayer` on the repository (scoped to this account), because `LeoApp`
-  imports the repo by name and CDK cannot otherwise attach the Lambda image-pull grant to it.
+  `ecr:GetDownloadUrlForLayer` on the repository, scoped by a `StringLike` condition on
+  `aws:sourceArn` (`arn:aws:lambda:<region>:<account>:function:*`, AWS's documented form for
+  this grant), because `LeoApp` imports the repo by name and CDK cannot otherwise attach the
+  Lambda image-pull grant to it.
 - A `leo-jobs-errors` CloudWatch alarm, notifying by email via SNS.
 - `leo-api` reserved concurrency is set by CDK context (`api_reserved_concurrency`, default
-  10), because new AWS accounts are limited to 10 concurrent executions.
+  10), because new AWS accounts are limited to 10 concurrent executions; the account quota
+  needed is 110 (100 unreserved + the 10 reserved), not 100.
+- The AWS Budget excludes credits (`CostTypes.IncludeCredit = False`), so the $5 alert still
+  fires on real spend while the AWS free plan's credits are covering the bill.
+- GitHub Actions reads `ALERT_EMAIL` from a repository **secret**, not a variable — this repo
+  is public, and Actions variables (unlike secrets) are visible to anyone who can see it.
+  `AWS_DEPLOY_ROLE_ARN` stays a variable, since a role ARN isn't sensitive.
 - `web/vercel.json` pins the Vercel project's function region to `cle1` (Cleveland), next to
   the API in AWS us-east-2 (Ohio), via the top-level `regions` setting — not the Next.js
-  `preferredRegion` route export, which is deprecated in Next 16.
+  `preferredRegion` route export, which is deprecated in Next 16. Its `ignoreCommand` diffs
+  against `$VERCEL_GIT_PREVIOUS_SHA` (not always the last commit), so an empty or missing SHA
+  fails the diff and safely proceeds with the build rather than skipping it.
 - fastembed, `rag_ingest` and LLM parameters move to the AI plan (out of scope for this
   deploy).
 
