@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { HIDE_ABOVE, isOccluded, LABEL_MAX, labelsActive, pickLabels, SHOW_BELOW, type Candidate } from "@/lib/labels";
+import { behindEarth, HIDE_ABOVE, isOccluded, LABEL_MAX, labelsActive, pickLabels, SHOW_BELOW, type Candidate } from "@/lib/labels";
 
 const W = 1000, H = 800;
 const c = (id: number, x: number, y: number, extra: Partial<Candidate> = {}): Candidate => ({ id, x, y, name: `SAT ${id}`, color: "#fff", occluded: false, ...extra });
@@ -22,6 +22,35 @@ describe("isOccluded", () => {
   it("is false for a point on the near side or off to the side", () => {
     expect(isOccluded([0, 0, 3], [0, 0, 1.1])).toBe(false);
     expect(isOccluded([0, 0, 3], [1.5, 0, -1])).toBe(false);
+  });
+});
+
+describe("behindEarth", () => {
+  const cam: [number, number, number] = [0, 0, 3];
+
+  it("is true for a point straight behind the Earth", () => {
+    expect(behindEarth(cam, [0, 0, -1.1])).toBe(true);
+  });
+
+  it("is false for a point behind the centre plane but outside the radius-1 cylinder (near the limb)", () => {
+    // along = -0.5 < 0 (behind the plane), but 1.3 off-axis puts it outside the cylinder.
+    expect(behindEarth(cam, [1.3, 0, -0.5])).toBe(false);
+  });
+
+  it("is false for any point in front of the centre plane (p·ĉ > 0)", () => {
+    expect(behindEarth(cam, [0, 0, 1.1])).toBe(false);
+    expect(behindEarth(cam, [0.5, 0.5, 0.1])).toBe(false);
+  });
+
+  it("never rejects a point isOccluded says is visible, across a sampled grid", () => {
+    for (let x = -2; x <= 2; x += 0.4) {
+      for (let y = -2; y <= 2; y += 0.4) {
+        for (let z = -2; z <= 2; z += 0.4) {
+          const p: [number, number, number] = [x, y, z];
+          if (behindEarth(cam, p)) expect(isOccluded(cam, p)).toBe(true);
+        }
+      }
+    }
   });
 });
 

@@ -4,7 +4,7 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { useRef } from "react";
 import * as THREE from "three";
 import { simClock } from "@/lib/clock";
-import { isOccluded, LABEL_INTERVAL_MS, labelsActive, pickLabels, type Candidate } from "@/lib/labels";
+import { behindEarth, isOccluded, LABEL_INTERVAL_MS, labelsActive, pickLabels, type Candidate } from "@/lib/labels";
 import { nameCache } from "@/lib/names";
 import { useExplorer } from "@/lib/store";
 import { GLOBE_COLORS } from "@/lib/types";
@@ -40,12 +40,6 @@ export function LabelDriver({ sources, container }: { sources: React.RefObject<(
     }
 
     const cam: [number, number, number] = [camera.position.x, camera.position.y, camera.position.z];
-    // Camera always looks at the origin here (initial positioning, flyTo, and OrbitControls'
-    // untouched target all point it at (0,0,0)), so the forward direction is just -position,
-    // normalized. Used below to reject far-side objects before the costlier occlusion test and
-    // matrix projection — see the Task 8 report's performance check for before/after numbers.
-    const camLen = camera.position.length() || 1;
-    const camForward: [number, number, number] = [-cam[0] / camLen, -cam[1] / camLen, -cam[2] / camLen];
     const t = simClock.now();
     const cands: Candidate[] = [];
     for (const src of sources.current ?? []) {
@@ -61,9 +55,11 @@ export function LabelDriver({ sources, container }: { sources: React.RefObject<(
         if (!name) return;
         const p = scratch.current;
         if (!interpolate(src.frames.current, t, i, p)) return;
-        const dot = (p.x - cam[0]) * camForward[0] + (p.y - cam[1]) * camForward[1] + (p.z - cam[2]) * camForward[2];
-        if (dot < 0) return;
-        const occluded = isOccluded(cam, [p.x, p.y, p.z]);
+        const pos: [number, number, number] = [p.x, p.y, p.z];
+        // Cheap conservative reject before the costlier ray-sphere solve and matrix projection —
+        // see behindEarth's doc comment in @/lib/labels for why this is sound.
+        if (behindEarth(cam, pos)) return;
+        const occluded = isOccluded(cam, pos);
         p.project(camera);
         if (p.z > 1) return;
         cands.push({
