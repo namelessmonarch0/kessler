@@ -31,6 +31,16 @@ body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased; }
 
 .label { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.02em; color: var(--color-ink-2); }
 
+.panel {
+  pointer-events: auto;
+  background: rgba(14, 14, 14, 0.86);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  border: 2px solid var(--color-line);
+  border-radius: 16px;
+  padding: 14px;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
 }

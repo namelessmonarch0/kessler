@@ -1,25 +1,14 @@
 "use client";
 
-import { animate, stagger } from "animejs";
 import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
-import { chartTitle } from "@/lib/chartData";
-import { prefersReducedMotion } from "@/lib/motion";
+import { PANELS, type PanelId } from "@/lib/panels";
 import { regimesFor, useExplorer } from "@/lib/store";
 import type { BreakdownResponse, Meta, TimeseriesResponse } from "@/lib/types";
-import { BarChart } from "@/components/charts/BarChart";
-import { LineChart } from "@/components/charts/LineChart";
-import { ChatPanel } from "@/components/panels/ChatPanel";
-import { Filters } from "@/components/panels/Filters";
-import { Footer } from "@/components/panels/Footer";
-import { Header } from "@/components/panels/Header";
-import { Intro } from "@/components/panels/Intro";
-import { ObjectCard } from "@/components/panels/ObjectCard";
-import { SearchBox } from "@/components/panels/SearchBox";
-import { StatTiles } from "@/components/panels/StatTiles";
-import { Card } from "@/components/ui/Card";
-import { Unavailable } from "@/components/ui/Unavailable";
+import { Panel } from "@/components/layout/Panel";
+import { PanelDock } from "@/components/layout/PanelDock";
+import { PANEL_CONTENT, type PanelCtx } from "@/components/panels/panelContent";
 
 // GlobeSection pulls in three/R3F/satellite.js — by far the largest slice of the
 // page's JS — and only ever renders client-side anyway (it probes WebGL support in an effect and
@@ -29,7 +18,7 @@ import { Unavailable } from "@/components/ui/Unavailable";
 // classes/aria-label) so swapping it in doesn't shift layout.
 const GlobeSection = dynamic(() => import("@/components/globe/GlobeSection").then((m) => m.GlobeSection), {
   ssr: false,
-  loading: () => <section className="card relative h-[420px] overflow-hidden sm:h-[560px]" aria-label="Live globe of tracked objects" />,
+  loading: () => <section className="fixed inset-0" aria-label="Live globe of tracked objects" />,
 });
 
 type Load<T> = { data: T | null; error: boolean };
@@ -41,6 +30,9 @@ export default function Explorer() {
   const owners = useExplorer((s) => s.owners);
   const types = useExplorer((s) => s.types);
   const orbits = useExplorer((s) => s.orbits);
+  const hydratePanels = useExplorer((s) => s.hydratePanels);
+
+  useEffect(() => hydratePanels(), [hydratePanels]);
 
   useEffect(() => {
     api.meta().then((d) => setMeta({ data: d, error: false })).catch(() => setMeta({ data: null, error: true }));
@@ -63,50 +55,24 @@ export default function Explorer() {
     };
   }, [owners, types, orbits]);
 
-  // Stagger the intro cards in on load. Snapshot the `.card` elements present right now (rather
-  // than handing animejs the live ".card" selector) so the fade-in only ever touches the cards
-  // that exist at mount — e.g. the object card and the charts render later, once data or a
-  // selection arrives, and must render at their normal opacity instead of inheriting an
-  // animation that started (and could be interrupted) before they existed.
-  useEffect(() => {
-    if (prefersReducedMotion()) return;
-    const cards = document.querySelectorAll<HTMLElement>(".card");
-    if (!cards.length) return;
-    animate(cards, { opacity: [0, 1], translateY: [18, 0], delay: stagger(70), duration: 700, ease: "outExpo" });
-  }, []);
-
+  const ctx: PanelCtx = { meta, ts, bars };
+  const panel = (id: PanelId, extra = "") => (
+    <Panel id={id} title={PANELS.find((p) => p.id === id)!.title} className={extra}>{PANEL_CONTENT[id](ctx)}</Panel>
+  );
   return (
-    <main className="mx-auto max-w-[1280px] px-4 pb-10 sm:px-7">
-      <Header />
-      <div id="explore" className="grid gap-5 lg:grid-cols-[1.15fr_0.85fr]">
-        <GlobeSection />
-        <div className="flex min-w-0 flex-col gap-5">
-          <Intro />
-          <StatTiles meta={meta.data} error={meta.error} />
-          <ObjectCard />
-          <Card><SearchBox /></Card>
-        </div>
+    <main className="h-dvh overflow-hidden">
+      <GlobeSection />
+      <div className="pointer-events-none fixed inset-x-0 top-3 z-20 flex justify-center px-[calc(theme(spacing.4)+var(--col))]" style={{ ["--col" as string]: "clamp(320px, 28vw, 380px)" }}>
+        <PanelDock />
       </div>
-      <div className="mt-5 grid gap-5 lg:grid-cols-[1.35fr_0.65fr]">
-        <Card aria-label="History chart" className="min-w-0 self-start">
-          <h2 className="font-mono text-[18px] text-ink">{ts.data ? chartTitle(ts.data) : "Objects in orbit by type"}</h2>
-          <p className="mt-1 text-[13px] leading-snug text-ink-2">
-            Objects in orbit at the end of each year. Collisions and anti-satellite tests caused the debris jumps;
-            Starlink-era launches drive the payload surge.
-          </p>
-          <div className="mt-3">{ts.error ? <Unavailable what="yearly history" /> : ts.data && <LineChart data={ts.data} />}</div>
-        </Card>
-        <div className="flex min-w-0 flex-col gap-5">
-          <Card aria-label="Owners chart">
-            <h2 className="font-mono text-[18px] text-ink">Who owns what&apos;s up there</h2>
-            <p className="mt-1 text-[13px] text-ink-2">Objects in orbit today, by owner and type.</p>
-            <div className="mt-3">{bars.error ? <Unavailable what="owners" /> : bars.data && <BarChart data={bars.data} owners={meta.data?.owners ?? []} />}</div>
-          </Card>
-          <Filters meta={meta.data} />
-          <ChatPanel />
-        </div>
+      <div className="pointer-events-none fixed bottom-4 left-4 top-14 z-10 flex w-[clamp(320px,28vw,380px)] flex-col justify-between gap-3 overflow-y-auto">
+        <div className="flex flex-col gap-3">{panel("overview")}{panel("filters")}</div>
+        {panel("history")}
       </div>
-      <Footer meta={meta.data} />
+      <div className="pointer-events-none fixed bottom-4 right-4 top-14 z-10 flex w-[clamp(320px,26vw,360px)] flex-col justify-between gap-3 overflow-y-auto">
+        <div className="flex flex-col gap-3">{panel("search")}{panel("chat")}</div>
+        {panel("owners")}
+      </div>
     </main>
   );
 }

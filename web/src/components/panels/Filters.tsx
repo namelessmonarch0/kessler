@@ -2,7 +2,6 @@
 
 import { useExplorer } from "@/lib/store";
 import { CHART_COLORS, TYPE_LABELS, type Meta, type ObjectType } from "@/lib/types";
-import { Card } from "@/components/ui/Card";
 
 const TYPES: ObjectType[] = ["PAY", "DEB", "R/B"];
 
@@ -13,7 +12,7 @@ export function Filters({ meta }: { meta: Meta | null }) {
     `rounded-full border-2 px-3 py-1.5 text-[13px] ${on ? "border-ink text-ink" : "border-line text-ink-2"} bg-[#121212]`;
 
   return (
-    <Card aria-label="Filters">
+    <div aria-label="Filters">
       <p className="label">Object types</p>
       <div className="mt-2 flex flex-wrap gap-2">
         {TYPES.map((t) => (
@@ -40,6 +39,6 @@ export function Filters({ meta }: { meta: Meta | null }) {
           <option key={o.code} value={o.code}>{`${o.flag_emoji ?? ""} ${o.name}`.trim()}</option>
         ))}
       </select>
-    </Card>
+    </div>
   );
 }

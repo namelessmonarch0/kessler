@@ -5,6 +5,7 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { useCallback, useEffect, useRef } from "react";
 import * as THREE from "three";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
+import { initialDistance } from "@/lib/camera";
 import { simClock } from "@/lib/clock";
 import type { OrbitRecord } from "@/lib/snapshot";
 import { useExplorer } from "@/lib/store";
@@ -26,6 +27,7 @@ export function GlobeScene({
   leo,
   high,
   active = true,
+  labelsRef,
 }: {
   leo: OrbitRecord[] | null;
   high: OrbitRecord[] | null;
@@ -33,11 +35,14 @@ export function GlobeScene({
    * down to each Objects/usePropagation instance to pause the propagation worker's tick
    * interval while nothing is rendering the results. */
   active?: boolean;
+  /** DOM overlay for object labels, filled in by Task 7. Unused here. */
+  labelsRef?: React.RefObject<HTMLDivElement | null>;
 }) {
   if (process.env.NODE_ENV !== "production" && typeof window !== "undefined" && window.__LEO_FORCE_GLOBE_ERROR__) {
     throw new Error("Forced globe error (test-only, via window.__LEO_FORCE_GLOBE_ERROR__)");
   }
   const camera = useThree((s) => s.camera) as THREE.PerspectiveCamera;
+  const size = useThree((s) => s.size);
   const sun = useRef<THREE.DirectionalLight>(null);
   const controls = useRef<OrbitControlsImpl>(null);
   const timeScale = useExplorer((s) => s.timeScale);
@@ -47,6 +52,14 @@ export function GlobeScene({
   const locators = useRef<(Locator | undefined)[]>([]);
 
   useEffect(() => simClock.setScale(timeScale), [timeScale]);
+
+  useEffect(() => {
+    const dir = new THREE.Vector3(0.6, 0.9, 3.6).normalize();
+    camera.position.copy(dir.multiplyScalar(initialDistance(size.width / Math.max(size.height, 1))));
+    camera.lookAt(0, 0, 0);
+    // Once, at mount: later resizes keep whatever zoom the user chose.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [camera]);
 
   useEffect(() => {
     if (selectedId === null) return;
@@ -85,7 +98,7 @@ export function GlobeScene({
       <Earth />
       {leo && <Objects records={leo} group="LEO" onReady={onReadyLeo} active={active} />}
       {high && <Objects records={high} group="HIGH" onReady={onReadyHigh} active={active} />}
-      <OrbitControls ref={controls} enableDamping enablePan={false} minDistance={1.12} maxDistance={9} zoomSpeed={0.8} />
+      <OrbitControls ref={controls} enableDamping enablePan={false} minDistance={1.12} maxDistance={12} zoomSpeed={0.8} />
     </>
   );
 }

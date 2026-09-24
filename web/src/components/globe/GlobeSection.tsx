@@ -44,7 +44,7 @@ function Readout({ live }: { live: boolean }) {
     return () => window.clearInterval(id);
   }, [live]);
   return (
-    <p className="label [text-shadow:0_1px_3px_rgba(0,0,0,0.85)]" aria-live="off">
+    <p className="label text-center [text-shadow:0_1px_3px_rgba(0,0,0,0.85)]" aria-live="off">
       <span className="hidden sm:inline">{full}</span>
       <span className="sm:hidden">{short}</span>
     </p>
@@ -66,6 +66,7 @@ export function GlobeSection() {
   const [active, setActive] = useState(true);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sectionRef = useRef<HTMLElement>(null);
+  const labelsRef = useRef<HTMLDivElement>(null);
   const wantHigh = useExplorer((s) => s.orbits.high);
   const timeScale = useExplorer((s) => s.timeScale);
   const setTimeScale = useExplorer((s) => s.setTimeScale);
@@ -131,7 +132,7 @@ export function GlobeSection() {
   }, []);
 
   return (
-    <section ref={sectionRef} className="card relative h-[420px] overflow-hidden sm:h-[560px]" aria-label="Live globe of tracked objects">
+    <section ref={sectionRef} className="fixed inset-0" aria-label="Live globe of tracked objects">
       {webgl && !broken && (
         <GlobeErrorBoundary onError={() => setRenderFailed(true)}>
           <Canvas
@@ -143,33 +144,36 @@ export function GlobeSection() {
             gl={{ antialias: true }}
           >
             <color attach="background" args={["#000000"]} />
-            <GlobeScene leo={leo} high={high} active={active} />
+            <GlobeScene leo={leo} high={high} active={active} labelsRef={labelsRef} />
           </Canvas>
         </GlobeErrorBoundary>
       )}
-      <div className="pointer-events-none absolute left-4 top-3 right-4 flex flex-col gap-1">
-        <Readout live={webgl === true && !broken} />
+      <div className="pointer-events-none absolute inset-x-0 top-1/2 flex -translate-y-1/2 flex-col items-center gap-1 text-center">
         {broken && <p className="text-sm text-ink-2">{NO_WEBGL_MESSAGE}</p>}
         {webgl && !broken && status === "loading" && <p className="label">Loading orbits…</p>}
         {webgl && !broken && status === "missing" && <p className="text-sm text-ink-2">Orbit data not available yet.</p>}
         {webgl && !broken && status === "error" && <p className="text-sm text-ink-2">Data unavailable. The Earth is shown without objects.</p>}
       </div>
-      <div className="absolute bottom-3 left-4 flex gap-2">
-        {([1, 4320] as const).map((s) => (
-          <button
-            key={s}
-            type="button"
-            onClick={() => {
-              if (s === 1) simClock.reset();
-              setTimeScale(s);
-            }}
-            aria-pressed={timeScale === s}
-            className={`rounded-full border-2 px-3 py-2 text-sm ${timeScale === s ? "border-ink text-ink" : "border-line text-ink-2"} bg-[#121212]`}
-          >
-            {s === 1 ? "Live" : "Fast · 1 day / 20 s"}
-          </button>
-        ))}
+      <div className="absolute bottom-4 left-1/2 flex -translate-x-1/2 flex-col items-center gap-2">
+        <Readout live={webgl === true && !broken} />
+        <div className="flex gap-2">
+          {([1, 4320] as const).map((s) => (
+            <button
+              key={s}
+              type="button"
+              onClick={() => {
+                if (s === 1) simClock.reset();
+                setTimeScale(s);
+              }}
+              aria-pressed={timeScale === s}
+              className={`rounded-full border-2 px-3 py-2 text-sm ${timeScale === s ? "border-ink text-ink" : "border-line text-ink-2"} bg-[#121212]`}
+            >
+              {s === 1 ? "Live" : "Fast · 1 day / 20 s"}
+            </button>
+          ))}
+        </div>
       </div>
+      <div ref={labelsRef} data-testid="globe-labels" aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden" />
     </section>
   );
 }

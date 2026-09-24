@@ -5,7 +5,6 @@ import { api } from "@/lib/api";
 import { fmtDate, fmtKm } from "@/lib/format";
 import { useExplorer } from "@/lib/store";
 import { TYPE_LABELS, type ObjectDetail } from "@/lib/types";
-import { Card } from "@/components/ui/Card";
 import { Unavailable } from "@/components/ui/Unavailable";
 
 function Row({ k, v }: { k: string; v: string }) {
@@ -39,7 +38,7 @@ export function ObjectCard() {
 
   if (selectedId === null) return null;
   return (
-    <Card aria-label="Selected object" data-testid="object-card">
+    <div aria-label="Selected object" data-testid="object-card">
       <div className="flex items-start justify-between gap-3">
         <h2 className="font-mono text-[18px] text-ink">{obj?.name ?? `NORAD ${selectedId}`}</h2>
         <button type="button" onClick={() => select(null)} className="text-sm text-ink-2 hover:text-ink" aria-label="Close">✕</button>
@@ -58,6 +57,6 @@ export function ObjectCard() {
           {obj.decay_date && <Row k="Re-entered" v={fmtDate(obj.decay_date)} />}
         </dl>
       )}
-    </Card>
+    </div>
   );
 }
