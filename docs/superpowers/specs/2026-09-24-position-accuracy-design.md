@@ -120,17 +120,20 @@ All tests below are Vitest in `web/tests/unit/accuracy.test.ts`, except the API 
   - if any check fails, opens one GitHub issue titled `Position accuracy out of tolerance — week of YYYY-MM-DD`, labelled `accuracy`, with the failing checks, their numbers and the worst objects;
   - needs `issues: write`;
   - does not open a new issue while an open one with that label already exists; it comments on the open one instead.
-- **Missing days** (a failed daily run) are listed in the summary. Four or more missing days in a week is itself a failure.
+- **Missing days** (a failed daily run) are listed in the summary. Four or more missing days in a week is itself a failure. Days before the first-ever capture (the earliest file in `audit/daily/`) are outside the record, not missing: the first week counts only the days from that capture onward and requires min(4, those days).
 
-### Tolerances (single source: `web/scripts/accuracy-tolerances.ts`)
+### Tolerances (single source: `web/scripts/accuracy/tolerances.ts`)
 
 | Check | Tolerance |
 |---|---|
-| Math error vs skyfield (same elements), any object, weekly max | ≤ 1 km |
+| Math error vs skyfield (same elements), any object, weekly max | ≤ 1 km (no measured object on a present day is a FAIL) |
+| Site-only failures (site cannot propagate, reference can), share of sampled, weekly max | ≤ 0.5% |
 | ISS ground distance vs wheretheiss.at, weekly max | ≤ 25 km |
 | ISS altitude difference, weekly max | ≤ 10 km |
-| Share of sampled objects with element age > 3 days, weekly mean | ≤ 5% |
+| Snapshot age at capture (capture time − LEO snapshot header `generated_at`), weekly max | ≤ 12 h (ingest runs every 6 h) |
 | Daily captures present | ≥ 4 of 7 |
+
+Element age (p50, p95 and the share older than 3 days) is recorded and shown in `AUDIT.md` as information only. It was originally a check (weekly mean share ≤ 5%), but the final review found it measures Space-Track's tracking cadence rather than the site's freshness — a live sample was 9.2% — so it would have been a guaranteed false alarm. Snapshot age replaced it. Each daily result also records `failures: { site, reference, both }`, counting objects that one or both sides could not propagate.
 
 The deterministic CI tests (§3) carry their own fixed tolerances. Globe alignment is exact (land and ocean classes).
 

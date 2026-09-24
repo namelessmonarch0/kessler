@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { evaluateWeek, historyEntryFor, planIssueAction, renderMarkdown, type HistoryEntry } from "./accuracy/weekly";
 
@@ -41,6 +41,15 @@ function readDailyFile(dir: string, date: string): string | null {
   }
 }
 
+/** The earliest YYYY-MM-DD.json in `dir` (the first-ever daily capture), or undefined if there is none. */
+function firstCaptureIn(dir: string): string | undefined {
+  if (!existsSync(dir)) return undefined;
+  return readdirSync(dir)
+    .filter((f) => /^\d{4}-\d{2}-\d{2}\.json$/.test(f))
+    .map((f) => f.slice(0, 10))
+    .sort()[0];
+}
+
 function readHistory(path: string): HistoryEntry[] {
   if (!existsSync(path)) return [];
   try {
@@ -77,7 +86,7 @@ async function main(): Promise<void> {
   const dates = lastSevenDays(new Date());
   const days = dates.map((date) => ({ date, raw: readDailyFile(dir, date) }));
 
-  const result = evaluateWeek(days);
+  const result = evaluateWeek(days, { firstCapture: firstCaptureIn(dir) });
 
   const existingHistory = readHistory(historyPath);
   const priorHistory = existingHistory.filter((h) => h.weekOf !== result.weekOf);

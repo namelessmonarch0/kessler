@@ -45,6 +45,9 @@ function parseDay(raw: string | null): DailyResult | null {
   if (!isPlainObject(p.byType)) return null;
   if (!isPlainObject(p.byRegime)) return null;
   if (!isPlainObject(p.age) || typeof p.age.staleShare !== "number") return null;
+  if (typeof p.sampled !== "number") return null;
+  if (!isPlainObject(p.failures) || typeof p.failures.site !== "number") return null;
+  if (p.snapshotAgeHours !== null && typeof p.snapshotAgeHours !== "number") return null;
   if (p.iss !== null && !isPlainObject(p.iss)) return null;
   return p as unknown as DailyResult;
 }
@@ -53,15 +56,26 @@ function max(vals: number[]): number | null {
   return vals.length === 0 ? null : Math.max(...vals);
 }
 
-export function evaluateWeek(days: InputDay[], tol = TOLERANCES): WeeklyResult {
+export type EvaluateOptions = {
+  /** Date (YYYY-MM-DD) of the first-ever daily capture; days before it are outside the record, not missing. */
+  firstCapture?: string;
+  tol?: typeof TOLERANCES;
+};
+
+export function evaluateWeek(days: InputDay[], opts: EvaluateOptions = {}): WeeklyResult {
+  const tol = opts.tol ?? TOLERANCES;
   const weekOf = days.length > 0 ? days[0].date : "";
+  const eligible = opts.firstCapture ? days.filter((d) => d.date >= opts.firstCapture!) : days;
   const present: DailyResult[] = [];
   const missing: string[] = [];
-  for (const d of days) {
+  for (const d of eligible) {
     const parsed = parseDay(d.raw);
     if (parsed) present.push(parsed);
     else missing.push(d.date);
   }
+  const daysPresent = present.length;
+  /** Captures required: 4 of 7, or every eligible day when fewer than 4 fall after the first capture. */
+  const daysRequired = Math.min(tol.minDaysPerWeek, eligible.length);
 
   const mathVals: number[] = [];
   for (const day of present) {
@@ -71,54 +85,63 @@ export function evaluateWeek(days: InputDay[], tol = TOLERANCES): WeeklyResult {
   const mathMax = max(mathVals);
 
   const issDays = present.filter((d) => d.iss !== null);
-  const issGroundMax = issDays.length > 0 ? max(issDays.map((d) => d.iss!.groundKm)) : null;
-  const issAltMax = issDays.length > 0 ? max(issDays.map((d) => Math.abs(d.iss!.altDiffKm))) : null;
+  const issGroundMax = max(issDays.map((d) => d.iss!.groundKm));
+  const issAltMax = max(issDays.map((d) => Math.abs(d.iss!.altDiffKm)));
 
-  const staleShares = present.map((d) => d.age.staleShare);
-  const staleMean = staleShares.length > 0 ? staleShares.reduce((a, b) => a + b, 0) / staleShares.length : null;
-
-  const daysPresent = present.length;
+  const snapshotAgeMax = max(present.flatMap((d) => (d.snapshotAgeHours === null ? [] : [d.snapshotAgeHours])));
+  const siteShareMax = max(present.map((d) => (d.sampled > 0 ? d.failures.site / d.sampled : 0)));
 
   const checks: Check[] = [
     {
       name: "Math error (ground), weekly max",
       value: mathMax,
       limit: tol.mathGroundKm,
-      pass: mathMax === null || mathMax <= tol.mathGroundKm,
+      pass: mathMax === null ? daysPresent === 0 : mathMax <= tol.mathGroundKm,
       detail: mathMax === null ? "no data" : `${mathMax.toFixed(3)} km`,
+    },
+    {
+      name: "Site-only failures, share of sampled, weekly max",
+      value: siteShareMax,
+      limit: tol.siteFailureShareMax,
+      pass: siteShareMax === null || siteShareMax <= tol.siteFailureShareMax,
+      detail: siteShareMax === null ? "no data" : `${(siteShareMax * 100).toFixed(2)}%`,
     },
     {
       name: "ISS ground distance, weekly max",
       value: issGroundMax,
       limit: tol.issGroundKm,
-      pass: issGroundMax === null ? daysPresent >= tol.minDaysPerWeek : issGroundMax <= tol.issGroundKm,
+      pass: issGroundMax === null ? daysPresent >= daysRequired : issGroundMax <= tol.issGroundKm,
       detail: issGroundMax === null ? "no ISS data" : `${issGroundMax.toFixed(3)} km`,
     },
     {
       name: "ISS altitude difference, weekly max",
       value: issAltMax,
       limit: tol.issAltKm,
-      pass: issAltMax === null ? daysPresent >= tol.minDaysPerWeek : issAltMax <= tol.issAltKm,
+      pass: issAltMax === null ? daysPresent >= daysRequired : issAltMax <= tol.issAltKm,
       detail: issAltMax === null ? "no ISS data" : `${issAltMax.toFixed(3)} km`,
     },
     {
-      name: "Stale element share, weekly mean",
-      value: staleMean,
-      limit: tol.staleShareMax,
-      pass: staleMean === null || staleMean <= tol.staleShareMax,
-      detail: staleMean === null ? "no data" : `${(staleMean * 100).toFixed(1)}%`,
+      name: "Snapshot age at capture (h), weekly max",
+      value: snapshotAgeMax,
+      limit: tol.snapshotAgeHoursMax,
+      pass: snapshotAgeMax === null ? daysPresent === 0 : snapshotAgeMax <= tol.snapshotAgeHoursMax,
+      detail: snapshotAgeMax === null ? "no data" : `${snapshotAgeMax.toFixed(1)} h`,
     },
     {
       name: "Daily captures present",
       value: daysPresent,
-      limit: tol.minDaysPerWeek,
-      pass: daysPresent >= tol.minDaysPerWeek,
-      detail: `${daysPresent} of ${days.length}`,
+      limit: daysRequired,
+      pass: daysPresent >= daysRequired,
+      detail: `${daysPresent} of ${eligible.length}`,
     },
   ];
 
-  const worst = present
-    .flatMap((d) => d.worst)
+  const worstById = new Map<number, Measurement>();
+  for (const m of present.flatMap((d) => d.worst)) {
+    const prev = worstById.get(m.noradId);
+    if (!prev || (m.groundKm ?? -Infinity) > (prev.groundKm ?? -Infinity)) worstById.set(m.noradId, m);
+  }
+  const worst = [...worstById.values()]
     .sort((a, b) => (b.groundKm ?? -Infinity) - (a.groundKm ?? -Infinity))
     .slice(0, 10);
 
@@ -142,6 +165,18 @@ export function renderMarkdown(result: WeeklyResult, history: HistoryEntry[]): s
   }
   lines.push("");
   lines.push(`Missing days: ${result.missing.length === 0 ? "none" : result.missing.join(", ")}`);
+  lines.push("");
+  lines.push("### Daily detail (information)");
+  lines.push("");
+  lines.push("| Date | Snapshot age (h) | Sampled | Failures site / reference / both | Element age p50 / p95 (d) | Element age > 3 d |");
+  lines.push("|---|---|---|---|---|---|");
+  for (const d of result.present) {
+    const snap = d.snapshotAgeHours === null ? "—" : d.snapshotAgeHours.toFixed(1);
+    const f = `${d.failures.site} / ${d.failures.reference} / ${d.failures.both}`;
+    lines.push(`| ${d.date} | ${snap} | ${d.sampled} | ${f} | ${d.age.p50Days.toFixed(2)} / ${d.age.p95Days.toFixed(2)} | ${(d.age.staleShare * 100).toFixed(1)}% |`);
+  }
+  lines.push("");
+  lines.push("Element age measures Space-Track's tracking cadence, not the site's freshness, so it is not a check.");
   lines.push("");
   lines.push("### Worst 10");
   if (result.worst.length === 0) {

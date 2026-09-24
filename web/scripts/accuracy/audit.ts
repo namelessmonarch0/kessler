@@ -14,18 +14,26 @@ export type Measurement = {
   groundKm: number | null;
   altDiffKm: number | null;
   ok: boolean;
+  /** Which side could not produce a position, when `ok` is false. */
+  failure?: Failure;
   error?: string;
 };
+
+export type Failure = "site" | "reference" | "both";
 
 export type Reference = { ok: boolean; latDeg?: number; lonDeg?: number; altKm?: number; error?: string };
 
 export type DailyResult = {
   date: string;
   commit: string;
+  /** The LEO snapshot header's `generated_at`. */
   generatedAt: string | null;
   timeMs: number;
+  /** (timeMs − generatedAt) in hours, or null when generatedAt is missing or unparsable. */
+  snapshotAgeHours: number | null;
   sampled: number;
   failed: number;
+  failures: { site: number; reference: number; both: number };
   byType: Record<string, { n: number; maxKm: number; p95Km: number }>;
   byRegime: Record<string, { n: number; maxKm: number; p95Km: number }>;
   age: { p50Days: number; p95Days: number; staleShare: number };
@@ -65,7 +73,8 @@ function shuffle<T>(arr: readonly T[], rand: () => number): T[] {
 
 /**
  * Deterministic (per dateIso), stratified-by-type sample of `n` records, always including the
- * sentinel ids that exist in `records`. See global-constraints and task-6-brief for the algorithm.
+ * sentinel ids that exist in `records`. Each type gets a share proportional to its population (at least
+ * min(10, its size)), then the totals are nudged to exactly `n`.
  */
 export function sampleObjects(records: OrbitRecord[], dateIso: string, n: number, sentinels: number[]): OrbitRecord[] {
   const rand = mulberry32(hashSeed(dateIso));
@@ -128,11 +137,16 @@ export function measure(
 ): Measurement {
   const ageDays = (timeMs - rec.epochMs) / 86_400_000;
   const base = { noradId: rec.noradId, name, type: rec.type, regime, ageDays };
-  if (!ours || !ref.ok || ref.latDeg === undefined || ref.lonDeg === undefined || ref.altKm === undefined) {
-    return { ...base, groundKm: null, altDiffKm: null, ok: false, error: ref.error };
+  const { latDeg, lonDeg, altKm } = ref;
+  const refPos = ref.ok && latDeg !== undefined && lonDeg !== undefined && altKm !== undefined ? { latDeg, lonDeg, altKm } : null;
+  if (!ours || !refPos) {
+    const siteFailed = !ours, refFailed = !refPos;
+    const failure: Failure = siteFailed && refFailed ? "both" : siteFailed ? "site" : "reference";
+    const error = [siteFailed ? "site propagation failed" : null, refFailed ? (ref.error ?? "reference incomplete") : null].filter(Boolean).join("; ");
+    return { ...base, groundKm: null, altDiffKm: null, ok: false, failure, error };
   }
-  const groundKm = greatCircleKm(ours.latDeg, ours.lonDeg, ref.latDeg, ref.lonDeg);
-  const altDiffKm = ref.altKm - ours.altKm;
+  const groundKm = greatCircleKm(ours.latDeg, ours.lonDeg, refPos.latDeg, refPos.lonDeg);
+  const altDiffKm = refPos.altKm - ours.altKm;
   return { ...base, groundKm, altDiffKm, ok: true };
 }
 
@@ -155,6 +169,10 @@ export function buildDailyResult(
 ): DailyResult {
   const ok = ms.filter((m) => m.ok);
   const failed = ms.length - ok.length;
+  const failures = { site: 0, reference: 0, both: 0 };
+  for (const m of ms) if (!m.ok) failures[m.failure ?? "both"]++;
+  const generatedMs = meta.generatedAt ? Date.parse(meta.generatedAt) : NaN;
+  const snapshotAgeHours = Number.isFinite(generatedMs) ? (meta.timeMs - generatedMs) / 3.6e6 : null;
 
   const byTypeGroups = new Map<string, number[]>();
   const byRegimeGroups = new Map<string, number[]>();
@@ -175,5 +193,5 @@ export function buildDailyResult(
 
   const worst = [...ok].sort((a, b) => b.groundKm! - a.groundKm!).slice(0, 10);
 
-  return { ...meta, sampled: ms.length, failed, byType, byRegime, age, iss, worst };
+  return { ...meta, snapshotAgeHours, sampled: ms.length, failed, failures, byType, byRegime, age, iss, worst };
 }

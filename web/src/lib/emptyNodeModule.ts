@@ -15,6 +15,5 @@
 // specifiers, so bundlers must still resolve them statically. Webpack fails fast with a clear
 // "Reading from node:module is not handled" error; Turbopack (as of Next 16.3.6) instead hangs
 // indefinitely when the reference is inside a `new Worker(..., { type: "module" })` entry point.
-// See turbopack.resolveAlias in next.config.ts, and the fix report appended to
-// .superpowers/sdd/2026-09-23-web-explorer/task-6-report.md for the full bisection.
+// See turbopack.resolveAlias in next.config.ts.
 export {};

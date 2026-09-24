@@ -57,15 +57,17 @@ async function fetchIss(): Promise<WtiaResponse | null> {
   }
 }
 
-async function fetchGroup(group: "LEO" | "HIGH"): Promise<{ records: OrbitRecord[]; names: NamesResponse }> {
+type Group = { records: OrbitRecord[]; generatedAt: string | null; names: NamesResponse };
+
+async function fetchGroup(group: "LEO" | "HIGH"): Promise<Group> {
   const [snapRes, namesRes] = await Promise.all([
     fetchWithRetry(`${SITE_ORIGIN}/api/globe/snapshot?group=${group}`, SNAPSHOT_TIMEOUT_MS, SNAPSHOT_RETRIES),
     fetchWithRetry(`${SITE_ORIGIN}/api/globe/names?group=${group}`, SNAPSHOT_TIMEOUT_MS, SNAPSHOT_RETRIES),
   ]);
   const gz = new Uint8Array(await snapRes.arrayBuffer());
-  const { records } = await loadSnapshot(gz);
+  const { header, records } = await loadSnapshot(gz);
   const names = (await namesRes.json()) as NamesResponse;
-  return { records, names };
+  return { records, generatedAt: header.generated_at ?? null, names };
 }
 
 function commitSha(): string {
@@ -102,7 +104,10 @@ function percentileTable(m: Record<string, { n: number; maxKm: number; p95Km: nu
 function printTable(result: DailyResult): void {
   const lines: string[] = [];
   lines.push(`Position audit — ${result.date} (commit ${result.commit}, generated_at ${result.generatedAt ?? "unknown"})`);
-  lines.push(`  sampled=${result.sampled} failed=${result.failed}`);
+  lines.push(`  snapshot age=${result.snapshotAgeHours === null ? "unknown" : `${result.snapshotAgeHours.toFixed(2)}h`}`);
+  lines.push(
+    `  sampled=${result.sampled} failed=${result.failed} (site=${result.failures.site} reference=${result.failures.reference} both=${result.failures.both})`,
+  );
   lines.push("  by type:");
   lines.push(percentileTable(result.byType));
   lines.push("  by regime:");
@@ -132,8 +137,8 @@ async function main(): Promise<void> {
   const wtia = await fetchIss();
   const timeMs = wtia ? wtia.timestamp * 1000 : Date.now();
 
-  let leo: { records: OrbitRecord[]; names: NamesResponse };
-  let high: { records: OrbitRecord[]; names: NamesResponse };
+  let leo: Group;
+  let high: Group;
   try {
     [leo, high] = await Promise.all([fetchGroup("LEO"), fetchGroup("HIGH")]);
   } catch (err) {
@@ -146,7 +151,8 @@ async function main(): Promise<void> {
   for (const r of leo.records) regimeById.set(r.noradId, "LEO");
   for (const r of high.records) regimeById.set(r.noradId, "HIGH");
   const nameById = new Map<string, string>([...Object.entries(leo.names.names), ...Object.entries(high.names.names)]);
-  const generatedAt = leo.names.generated_at ?? high.names.generated_at ?? null;
+  // Freshness is judged from the LEO snapshot header (the snapshot the site actually serves).
+  const generatedAt = leo.generatedAt;
   const allRecords = [...leo.records, ...high.records];
 
   const golden = JSON.parse(

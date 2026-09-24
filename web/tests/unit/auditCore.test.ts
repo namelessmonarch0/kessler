@@ -42,10 +42,20 @@ describe("measure", () => {
     expect(m.ok).toBe(false);
     expect(m.groundKm).toBeNull();
   });
+  it("records which side failed", () => {
+    const pos = { latDeg: 0, lonDeg: 0, altKm: 500 };
+    const refOk = { ok: true, latDeg: 0, lonDeg: 0, altKm: 500 };
+    const refBad = { ok: false, error: "sgp4 error 6" };
+    expect(measure(rec(1, "DEB"), "LEO", "X", 0, pos, refOk).failure).toBeUndefined();
+    expect(measure(rec(1, "DEB"), "LEO", "X", 0, null, refOk).failure).toBe("site");
+    expect(measure(rec(1, "DEB"), "LEO", "X", 0, pos, refBad).failure).toBe("reference");
+    expect(measure(rec(1, "DEB"), "LEO", "X", 0, null, refBad).failure).toBe("both");
+    expect(measure(rec(1, "DEB"), "LEO", "X", 0, pos, { ok: true }).failure).toBe("reference"); // incomplete reference
+  });
 });
 
 describe("buildDailyResult", () => {
-  const meta = { date: "2026-09-24", commit: "abc", generatedAt: "2026-09-24T06:00:00Z", timeMs: 0 };
+  const meta = { date: "2026-09-24", commit: "abc", generatedAt: "2026-09-24T06:00:00Z", timeMs: Date.parse("2026-09-24T09:00:00Z") };
   it("aggregates by type/regime, ages, and worst list; excludes failures from errors", () => {
     const ok = (id: number, type: OrbitRecord["type"], g: number, age: number) => ({ noradId: id, name: `N${id}`, type, regime: "LEO" as const, ageDays: age, groundKm: g, altDiffKm: 0.1, ok: true });
     const r = buildDailyResult(meta, [ok(1, "PAY", 0.2, 0.5), ok(2, "DEB", 0.9, 4), ok(3, "DEB", 0.1, 1), { noradId: 4, name: "N4", type: "R/B", regime: "LEO", ageDays: 1, groundKm: null, altDiffKm: null, ok: false, error: "x" }], null);
@@ -58,5 +68,16 @@ describe("buildDailyResult", () => {
   });
   it("buildDailyResult with no ISS reference sets iss null", () => {
     expect(buildDailyResult(meta, [], null).iss).toBeNull();
+  });
+  it("counts failures by side", () => {
+    const f = (id: number, failure: "site" | "reference" | "both") => ({ noradId: id, name: `N${id}`, type: "DEB" as const, regime: "LEO" as const, ageDays: 1, groundKm: null, altDiffKm: null, ok: false, failure });
+    const r = buildDailyResult(meta, [f(1, "site"), f(2, "reference"), f(3, "reference"), f(4, "both")], null);
+    expect(r.failures).toEqual({ site: 1, reference: 2, both: 1 });
+    expect(r.failed).toBe(4);
+  });
+  it("records the snapshot's age from its generated_at", () => {
+    expect(buildDailyResult(meta, [], null).snapshotAgeHours).toBeCloseTo(3, 9);
+    expect(buildDailyResult({ ...meta, generatedAt: null }, [], null).snapshotAgeHours).toBeNull();
+    expect(buildDailyResult({ ...meta, generatedAt: "garbage" }, [], null).snapshotAgeHours).toBeNull();
   });
 });
