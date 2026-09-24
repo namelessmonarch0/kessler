@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
-import { Inter_Tight } from "next/font/google";
 import localFont from "next/font/local";
 import "./globals.css";
 
-const inter = Inter_Tight({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
+// Departure Mono is the only typeface on the site (see globals.css: --font-sans and --font-mono
+// both resolve to it) — Inter Tight was dropped, so its files are never fetched.
 const departure = localFont({
   src: "./fonts/DepartureMono-Regular.woff2",
   variable: "--font-departure",
@@ -17,7 +17,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${inter.variable} ${departure.variable}`}>
+    <html lang="en" className={departure.variable}>
       <body className="min-h-screen">{children}</body>
     </html>
   );

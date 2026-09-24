@@ -68,7 +68,7 @@ export function BarChart({ data, owners }: { data: BreakdownResponse; owners: Ow
           let acc = 0;
           return (
             <g key={row.key}>
-              <text x={marginLeft - 10} y={(y(row.key) ?? 0) + y.bandwidth() / 2 + 4} textAnchor="end" className="fill-ink text-[13px] font-semibold">
+              <text x={marginLeft - 10} y={(y(row.key) ?? 0) + y.bandwidth() / 2 + 4} textAnchor="end" className="fill-ink font-mono text-[12px]">
                 {display[i]}
               </text>
               {KEYS.map((k) => {

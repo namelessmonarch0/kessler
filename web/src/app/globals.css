@@ -33,7 +33,9 @@
   --color-rb-chart: #957be0;
   --color-ocean: #2f6fd6;
   --color-land: #7fd06b;
-  --font-sans: var(--font-inter), system-ui, sans-serif;
+  /* Departure Mono is the only typeface — --font-sans and --font-mono both resolve to it (see
+     layout.tsx), so every "font-mono"/"font-sans" utility renders identically. */
+  --font-sans: var(--font-departure), ui-monospace, monospace;
   --font-mono: var(--font-departure), ui-monospace, monospace;
 }
 
@@ -43,12 +45,10 @@
   --col-r: clamp(320px, 26vw, 360px);
 }
 
-html, body { background: var(--color-bg); color: var(--color-ink); }
-body { font-family: var(--font-sans); font-weight: 500; -webkit-font-smoothing: antialiased; }
-
-/* Departure Mono ships one weight only — never let the browser fake-bold it (mono headings and
-   numbers get brightness/size instead of weight; see globals.css callers of .label / font-mono). */
-.font-mono { font-synthesis: none; }
+/* Departure Mono ships one weight only — never let the browser fake-bold (or fake-italic) it;
+   inherited, so this covers every element regardless of font-family/weight utility. */
+html, body { background: var(--color-bg); color: var(--color-ink); font-synthesis: none; }
+body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased; }
 
 .card {
   background: var(--color-card);
@@ -57,7 +57,7 @@ body { font-family: var(--font-sans); font-weight: 500; -webkit-font-smoothing: 
   box-shadow: 5px 5px 0 #1c1c1c;
 }
 
-.label { font-family: var(--font-mono); font-synthesis: none; font-size: 12px; letter-spacing: 0.02em; color: var(--color-ink-2); }
+.label { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.02em; color: var(--color-ink-2); }
 
 .panel {
   pointer-events: auto;
@@ -92,7 +92,6 @@ body { font-family: var(--font-sans); font-weight: 500; -webkit-font-smoothing: 
   position: absolute;
   pointer-events: auto;
   font-family: var(--font-mono);
-  font-synthesis: none;
   font-size: 12px;
   line-height: 14px;
   padding: 2px 6px;

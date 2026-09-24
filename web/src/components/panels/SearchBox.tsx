@@ -46,9 +46,9 @@ export function SearchBox() {
         id="search"
         value={q}
         onChange={(e) => setQ(e.target.value)}
-        placeholder="ISS, STARLINK-1007, 25544, 1999-025…"
+        placeholder="ISS, 25544, 1999-025…"
         maxLength={100}
-        className="mt-2 w-full rounded-[10px] border-2 border-line bg-[#121212] px-3 py-2 text-sm text-ink placeholder:text-ink-3"
+        className="mt-2 w-full rounded-[10px] border-2 border-line bg-[#121212] px-3 py-2 text-[13px] text-ink placeholder:text-ink-3"
       />
       {error && <p className="mt-2 text-[13px] text-ink-2">{error}</p>}
       {results.length > 0 && (

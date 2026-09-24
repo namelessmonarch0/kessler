@@ -50,7 +50,7 @@ export default function About() {
           <ul className="mt-3 space-y-2 text-[15px] text-ink-2">
             <li>Orbital elements and catalog: USSPACECOM via <a className="underline hover:text-ink" href="https://www.space-track.org">Space-Track.org</a> and <a className="underline hover:text-ink" href="https://celestrak.org">CelesTrak</a>.</li>
             <li>Coastlines: <a className="underline hover:text-ink" href="https://www.naturalearthdata.com">Natural Earth</a> via world-atlas.</li>
-            <li>Typeface: Departure Mono by Helena Zhang (SIL Open Font License) and Inter Tight.</li>
+            <li>Typeface: Departure Mono by Helena Zhang (SIL Open Font License).</li>
           </ul>
         </Card>
       </div>

@@ -14,7 +14,7 @@ export function PanelDock() {
           type="button"
           aria-pressed={panels[p.id]}
           onClick={() => togglePanel(p.id)}
-          className={`rounded-full border px-3 py-1 text-[13px] font-semibold backdrop-blur ${panels[p.id] ? "border-ink/70 bg-[#141414]/90 text-ink" : "border-line bg-[#0b0b0b]/80 text-ink-3"}`}
+          className={`rounded-full border px-3 py-1 text-[13px] backdrop-blur ${panels[p.id] ? "border-ink/70 bg-[#141414]/90 text-ink" : "border-line bg-[#0b0b0b]/80 text-ink-3"}`}
         >
           {p.title}
         </button>
