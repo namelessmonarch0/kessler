@@ -40,11 +40,13 @@ afterward.
  aws ssm put-parameter --type SecureString --name /leo/DATABASE_URL --value '<neon pooled connection string>'
  aws ssm put-parameter --type SecureString --name /leo/SPACETRACK_USER --value '<space-track username>'
  aws ssm put-parameter --type SecureString --name /leo/SPACETRACK_PASS --value '<space-track password>'
- aws ssm put-parameter --type SecureString --name /leo/ORIGIN_SECRET --value "$(openssl rand -hex 32)"
+ ORIGIN_SECRET="$(openssl rand -hex 32)"
+ echo "$ORIGIN_SECRET"   # shown here only, in this terminal — not stored anywhere else
+ aws ssm put-parameter --type SecureString --name /leo/ORIGIN_SECRET --value "$ORIGIN_SECRET"
 ```
 
-`ORIGIN_SECRET` is generated locally with `openssl rand -hex 32` — copy the printed value now;
-it is also needed in step 9 (Vercel) and step 7 (verification).
+Copy the printed `ORIGIN_SECRET` value now — it is also needed in step 9 (Vercel) and step 7
+(verification).
 
 ## 4. Registry and CI stacks
 
@@ -77,9 +79,9 @@ npx -y aws-cdk@2.1143.0 deploy LeoApp --require-approval never \
   -c image_tag="$TAG" -c alert_email="<alert email>"
 ```
 
-AWS sends two confirmation emails to `<alert email>`: one for the SNS topic subscription
-(`leo-jobs-errors` alarm) — click the confirm link — and none for AWS Budgets (budget
-notifications need no subscription confirmation).
+AWS sends one confirmation email to `<alert email>`, for the SNS topic subscription
+(`leo-jobs-errors` alarm) — click the confirm link, or alarm notifications won't arrive.
+AWS Budgets alerts need no subscription confirmation.
 
 ## 6. Migrate and load first data
 
@@ -168,10 +170,11 @@ Visit `https://leo.kudayyurter.dev` and confirm:
 
 ```bash
 NEW_SECRET="$(openssl rand -hex 32)"
+echo "$NEW_SECRET"   # shown here only, in this terminal — not stored anywhere else
 aws ssm put-parameter --type SecureString --name /leo/ORIGIN_SECRET --value "$NEW_SECRET" --overwrite
 ```
 
-Update `ORIGIN_SECRET` in the Vercel project (Production + Preview) to the same value and
+Update `ORIGIN_SECRET` in the Vercel project (Production + Preview) to the printed value and
 redeploy the web app. Then force `leo-api` to drop its warm containers, so every invocation
 re-reads SSM:
 

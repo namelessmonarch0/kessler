@@ -306,8 +306,9 @@ Prototypes remain in `.superpowers/brainstorm/` (globe-sun.html, globe-anime.htm
 - A `leo-jobs-errors` CloudWatch alarm, notifying by email via SNS.
 - `leo-api` reserved concurrency is set by CDK context (`api_reserved_concurrency`, default
   10), because new AWS accounts are limited to 10 concurrent executions.
-- The Vercel proxy route runs in region `cle1` (Cleveland), next to the API in AWS us-east-2
-  (Ohio).
+- `web/vercel.json` pins the Vercel project's function region to `cle1` (Cleveland), next to
+  the API in AWS us-east-2 (Ohio), via the top-level `regions` setting — not the Next.js
+  `preferredRegion` route export, which is deprecated in Next 16.
 - fastembed, `rag_ingest` and LLM parameters move to the AI plan (out of scope for this
   deploy).
 
