@@ -2,9 +2,9 @@ import os
 
 from aws_cdk import App, Environment
 
-from leo_infra.app_stack import LeoAppStack
-from leo_infra.ci_stack import LeoCiStack
-from leo_infra.registry_stack import LeoRegistryStack
+from kessler_infra.app_stack import KesslerAppStack
+from kessler_infra.ci_stack import KesslerCiStack
+from kessler_infra.registry_stack import KesslerRegistryStack
 
 os.environ.setdefault("JSII_SILENCE_WARNING_UNTESTED_NODE_VERSION", "1")
 
@@ -17,12 +17,13 @@ def ctx(name: str) -> str | None:
     return str(value) if value not in (None, "") else None
 
 
-LeoRegistryStack(app, "LeoRegistry", env=env)
-LeoCiStack(app, "LeoCi", env=env, github_repo=ctx("github_repo") or "namelessmonarch0/leo-debris")
+KesslerRegistryStack(app, "KesslerRegistry", env=env)
+KesslerCiStack(app, "KesslerCi", env=env,
+               github_repo=ctx("github_repo") or "namelessmonarch0/kessler")
 
 image_tag, alert_email = ctx("image_tag"), ctx("alert_email")
 if image_tag and alert_email:
-    LeoAppStack(app, "LeoApp", env=env, image_tag=image_tag, alert_email=alert_email,
+    KesslerAppStack(app, "KesslerApp", env=env, image_tag=image_tag, alert_email=alert_email,
                 api_reserved_concurrency=int(ctx("api_reserved_concurrency") or 10))
 
 app.synth()

@@ -1,4 +1,4 @@
-"""Entry point of the `leo-jobs` Lambda (image target `jobs`).
+"""Entry point of the `kessler-jobs` Lambda (image target `jobs`).
 
 EventBridge Scheduler invokes it with {"job": "ingest-satcat"} or {"job": "ingest-gp"}. The
 deploy workflow invokes {"job": "migrate"}; the owner can run {"job": "all"} once to load data.
@@ -11,7 +11,7 @@ from app.jobs import JOBS, run_job
 from app.migrate import upgrade_head
 
 LAMBDA_JOBS = ("migrate", *JOBS)
-log = logging.getLogger("leo.jobs")
+log = logging.getLogger("kessler.jobs")
 
 
 def handler(event: dict | None, context) -> dict:

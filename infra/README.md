@@ -1,15 +1,15 @@
 # infra
 
-AWS CDK (Python) app for the LEO Debris deployment.
+AWS CDK (Python) app for the Kessler deployment.
 
 ## Stacks
 
-- **LeoApp** (`leo_infra/app_stack.py`) — the `leo-api` and `leo-jobs` container Lambdas
-  (built from `api/Dockerfile` targets `api` and `jobs` in the `leo-api` ECR repo), the
-  public streaming Function URL for `leo-api`, the private TLS-only snapshot S3 bucket,
+- **KesslerApp** (`kessler_infra/app_stack.py`) — the `kessler-api` and `kessler-jobs` container Lambdas
+  (built from `api/Dockerfile` targets `api` and `jobs` in the `kessler-api` ECR repo), the
+  public streaming Function URL for `kessler-api`, the private TLS-only snapshot S3 bucket,
   and 14-day CloudWatch log groups for both functions. Only defined when the CDK context
   keys `image_tag` and `alert_email` are both supplied.
-- **LeoRegistry** (`leo_infra/registry_stack.py`), **LeoCi** (`leo_infra/ci_stack.py`) — the
+- **KesslerRegistry** (`kessler_infra/registry_stack.py`), **KesslerCi** (`kessler_infra/ci_stack.py`) — the
   ECR repo and the GitHub OIDC provider/deploy role, provisioned ahead of any image existing.
 
 ## Development

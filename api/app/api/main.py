@@ -28,7 +28,7 @@ def create_app(
         if database is None:
             db.close()
 
-    app = FastAPI(title="LEO Debris API", version="0.1.0", lifespan=lifespan)
+    app = FastAPI(title="Kessler API", version="0.1.0", lifespan=lifespan)
     install_error_handlers(app)
     install_origin_auth(app, settings.origin_secret)
     app.include_router(router)

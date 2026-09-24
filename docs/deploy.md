@@ -1,6 +1,6 @@
 # Go-live runbook
 
-This is the one-time checklist to take LEO Debris from a working local checkout to a live
+This is the one-time checklist to take Kessler from a working local checkout to a live
 site at `leo.kudayyurter.dev`, backed by AWS Lambda (us-east-2) and a Neon Postgres database,
 deployed automatically from `main` via GitHub Actions.
 
@@ -29,7 +29,7 @@ first one.
 - An alert email address, for AWS Budgets and CloudWatch alarm notifications.
 - If the target AWS account already has a GitHub OIDC provider
   (`token.actions.githubusercontent.com`) from an earlier project, step 4 below will fail — an
-  account can only have one, and `LeoCi` tries to create it. Importing an existing provider into
+  account can only have one, and `KesslerCi` tries to create it. Importing an existing provider into
   this stack is out of scope for this runbook: either delete the old, unused provider first (IAM
   console → Identity providers), or stop here and ask before proceeding.
 
@@ -40,10 +40,10 @@ npx -y aws-cdk@2.1143.0 bootstrap aws://<account>/us-east-2
 aws lambda get-account-settings --query AccountLimit.ConcurrentExecutions
 ```
 
-New AWS accounts are sometimes limited to 10 concurrent Lambda executions. `leo-api` reserves 10
+New AWS accounts are sometimes limited to 10 concurrent Lambda executions. `kessler-api` reserves 10
 of them, and Lambda always keeps 100 unreserved for the rest of the account, so reserving 10
 needs a quota of at least **110**. If the value printed above is below 110, edit `infra/cdk.json`
-and set `"api_reserved_concurrency": 0` (this disables reserved concurrency on `leo-api` rather
+and set `"api_reserved_concurrency": 0` (this disables reserved concurrency on `kessler-api` rather
 than reserving more than the account has). **Commit that change** — CI deploys with whatever
 `infra/cdk.json` says in the repo, so an edit that's only on disk here has no effect once step 8
 pushes to `main`. Then request a quota increase: Service Quotas console → AWS services → Lambda
@@ -55,7 +55,7 @@ to `10` and commit that too.
 **Owner types this personally** — these commands carry real secret values, so run them yourself
 rather than having an assistant run them for you.
 
-Store secrets in SSM Parameter Store as `SecureString`s under `/leo/`. Nothing here is ever
+Store secrets in SSM Parameter Store as `SecureString`s under `/kessler/`. Nothing here is ever
 committed to the repo or a CDK template.
 
 Shell history keeps whatever you type. In bash, a leading space only skips history when
@@ -65,12 +65,12 @@ delete the recorded lines afterward with `history -d <offset>`), or write each v
 first and delete the file afterward.
 
 ```bash
- aws ssm put-parameter --type SecureString --name /leo/DATABASE_URL --value '<neon pooled connection string>'
- aws ssm put-parameter --type SecureString --name /leo/SPACETRACK_USER --value '<space-track username>'
- aws ssm put-parameter --type SecureString --name /leo/SPACETRACK_PASS --value '<space-track password>'
+ aws ssm put-parameter --type SecureString --name /kessler/DATABASE_URL --value '<neon pooled connection string>'
+ aws ssm put-parameter --type SecureString --name /kessler/SPACETRACK_USER --value '<space-track username>'
+ aws ssm put-parameter --type SecureString --name /kessler/SPACETRACK_PASS --value '<space-track password>'
  ORIGIN_SECRET="$(openssl rand -hex 32)"
  echo "$ORIGIN_SECRET"   # shown here only, in this terminal — not stored anywhere else
- aws ssm put-parameter --type SecureString --name /leo/ORIGIN_SECRET --value "$ORIGIN_SECRET"
+ aws ssm put-parameter --type SecureString --name /kessler/ORIGIN_SECRET --value "$ORIGIN_SECRET"
 ```
 
 Copy the printed `ORIGIN_SECRET` value now — it is needed in step 9 (Vercel), where it must be
@@ -81,14 +81,14 @@ from SSM automatically, so you don't need to keep it around for those.
 
 ```bash
 cd infra
-npx -y aws-cdk@2.1143.0 deploy LeoRegistry LeoCi --require-approval never
+npx -y aws-cdk@2.1143.0 deploy KesslerRegistry KesslerCi --require-approval never
 cd ..
 ```
 
-This creates the ECR repository `leo-api` (a lifecycle rule keeps only the newest 10 images —
+This creates the ECR repository `kessler-api` (a lifecycle rule keeps only the newest 10 images —
 each deploy pushes 2, one `api-<sha>` and one `jobs-<sha>`, so that's 5 deploys' worth of
 rollback headroom) with a repository policy that lets Lambda pull from it, and the GitHub OIDC
-provider plus the `leo-github-deploy` IAM role that GitHub Actions will assume on `main`. Note
+provider plus the `kessler-github-deploy` IAM role that GitHub Actions will assume on `main`. Note
 the `DeployRoleArn` output — it is needed in step 8.
 
 ## 5. First images and app stack
@@ -101,7 +101,7 @@ aws ecr get-login-password --region us-east-2 | \
 
 cd api
 TAG="$(git rev-parse HEAD)"
-REPO="<account>.dkr.ecr.us-east-2.amazonaws.com/leo-api"
+REPO="<account>.dkr.ecr.us-east-2.amazonaws.com/kessler-api"
 for target in api jobs; do
   docker buildx build --platform linux/amd64 --provenance=false --push \
     --target "$target" -t "$REPO:$target-$TAG" .
@@ -109,16 +109,16 @@ done
 cd ..
 
 cd infra
-npx -y aws-cdk@2.1143.0 deploy LeoApp --require-approval never \
+npx -y aws-cdk@2.1143.0 deploy KesslerApp --require-approval never \
   -c image_tag="$TAG" -c alert_email="<alert email>"
 cd ..
 ```
 
 AWS sends one confirmation email to `<alert email>`, for the SNS topic subscription
-(`leo-jobs-errors` alarm) — click the confirm link, or alarm notifications won't arrive.
+(`kessler-jobs-errors` alarm) — click the confirm link, or alarm notifications won't arrive.
 AWS Budgets alerts need no subscription confirmation.
 
-`LeoApp` also creates the `ingest-gp` schedule (every 6 hours, at minute 41) right away. If it
+`KesslerApp` also creates the `ingest-gp` schedule (every 6 hours, at minute 41) right away. If it
 happens to fire between this step and step 6, that run will fail — the database tables don't
 exist yet — and send one alarm email. That's expected and harmless: step 6 loads the data that
 matters, and the next scheduled `ingest-gp` run (or a manual rerun, see Operations) succeeds
@@ -127,11 +127,11 @@ normally once the tables are there.
 ## 6. Migrate and load first data
 
 ```bash
-aws lambda invoke --function-name leo-jobs --cli-binary-format raw-in-base64-out \
+aws lambda invoke --function-name kessler-jobs --cli-binary-format raw-in-base64-out \
   --cli-read-timeout 900 --payload '{"job":"migrate"}' migrate-out.json
 cat migrate-out.json
 
-aws lambda invoke --function-name leo-jobs --cli-binary-format raw-in-base64-out \
+aws lambda invoke --function-name kessler-jobs --cli-binary-format raw-in-base64-out \
   --cli-read-timeout 900 --payload '{"job":"all"}' ingest-out.json
 cat ingest-out.json
 ```
@@ -139,20 +139,20 @@ cat ingest-out.json
 Then check that `ingest_runs` recorded both jobs via the API (see step 7 for the Function URL):
 
 ```bash
-curl -s -H "x-origin-auth: $(aws ssm get-parameter --name /leo/ORIGIN_SECRET \
+curl -s -H "x-origin-auth: $(aws ssm get-parameter --name /kessler/ORIGIN_SECRET \
   --with-decryption --query Parameter.Value --output text)" "<function url>api/meta" | head -c 2000
 ```
 
 ## 7. Verify the Function URL
 
 ```bash
-URL=$(aws cloudformation describe-stacks --stack-name LeoApp \
+URL=$(aws cloudformation describe-stacks --stack-name KesslerApp \
   --query "Stacks[0].Outputs[?OutputKey=='ApiFunctionUrl'].OutputValue" --output text)
 
 curl -s -o /dev/null -w '%{http_code}\n' "${URL}api/health"                            # 200
 curl -s -o /dev/null -w '%{http_code}\n' "${URL}api/meta"                              # 403
 curl -s -o /dev/null -w '%{http_code}\n' -H "x-origin-auth: $(aws ssm get-parameter \
-  --name /leo/ORIGIN_SECRET --with-decryption --query Parameter.Value --output text)" \
+  --name /kessler/ORIGIN_SECRET --with-decryption --query Parameter.Value --output text)" \
   "${URL}api/meta"                                                                     # 200
 ```
 
@@ -160,7 +160,7 @@ curl -s -o /dev/null -w '%{http_code}\n' -H "x-origin-auth: $(aws ssm get-parame
 
 ## 8. GitHub
 
-Create the repository (empty, no README/license) at `namelessmonarch0/leo-debris`.
+Create the repository (empty, no README/license) at `namelessmonarch0/kessler`.
 
 Before pushing anything, set the deploy job's configuration in the new repo's Settings → Secrets
 and variables → Actions:
@@ -184,12 +184,12 @@ docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:latest git /repo
 Fix anything it flags, then push:
 
 ```bash
-git remote add origin https://github.com/namelessmonarch0/leo-debris.git
+git remote add origin https://github.com/namelessmonarch0/kessler.git
 git push -u origin main
 ```
 
 From here on, every push to `main` that touches `api/`, `infra/` or the deploy workflow itself
-builds and pushes both images, runs `cdk deploy LeoApp`, runs the `migrate` job, and smoke-tests
+builds and pushes both images, runs `cdk deploy KesslerApp`, runs the `migrate` job, and smoke-tests
 the Function URL — see `.github/workflows/deploy.yml`. The `migrate` job runs right after the
 new code goes live, not before, so migrations must stay backward-compatible with the previous
 release (the outgoing Lambda containers can still be warm and serving during that gap).
@@ -201,7 +201,7 @@ workflow**.
 
 ## 9. Vercel
 
-- New project, imported from `namelessmonarch0/leo-debris`, **Root Directory** `web`.
+- New project, imported from `namelessmonarch0/kessler`, **Root Directory** `web`.
 - Project environment variables (Production and Preview) — **owner types this personally**:
   - `API_ORIGIN_URL` = the Function URL from step 7, **without** the trailing slash.
   - `ORIGIN_SECRET` = the value generated in step 3.
@@ -232,39 +232,39 @@ Visit `https://leo.kudayyurter.dev` and confirm:
 ```bash
 NEW_SECRET="$(openssl rand -hex 32)"
 echo "$NEW_SECRET"   # shown here only, in this terminal — not stored anywhere else
-aws ssm put-parameter --type SecureString --name /leo/ORIGIN_SECRET --value "$NEW_SECRET" --overwrite
+aws ssm put-parameter --type SecureString --name /kessler/ORIGIN_SECRET --value "$NEW_SECRET" --overwrite
 ```
 
 Update `ORIGIN_SECRET` in the Vercel project (Production + Preview) to the printed value and
-redeploy the web app. Then force `leo-api` to drop its warm containers, so every invocation
+redeploy the web app. Then force `kessler-api` to drop its warm containers, so every invocation
 re-reads SSM:
 
 ```bash
-aws lambda update-function-configuration --function-name leo-api \
+aws lambda update-function-configuration --function-name kessler-api \
   --description "rotated $(date -u +%F)"
 ```
 
 **Rerun a job manually** (e.g. after a failed scheduled ingest):
 
 ```bash
-aws lambda invoke --function-name leo-jobs --cli-binary-format raw-in-base64-out \
+aws lambda invoke --function-name kessler-jobs --cli-binary-format raw-in-base64-out \
   --cli-read-timeout 900 --payload '{"job":"ingest-gp"}' out.json && cat out.json
 ```
 
 **Read logs:**
 
 ```bash
-aws logs tail /aws/lambda/leo-jobs --since 1d
-aws logs tail /aws/lambda/leo-api --since 1d
+aws logs tail /aws/lambda/kessler-jobs --since 1d
+aws logs tail /aws/lambda/kessler-api --since 1d
 ```
 
-**Rollback:** redeploy `LeoApp` with an older, known-good `image_tag` (a previous commit SHA
+**Rollback:** redeploy `KesslerApp` with an older, known-good `image_tag` (a previous commit SHA
 still present in the ECR repository — it keeps the newest 10 images, i.e. the last 5 deploys,
 since each deploy pushes 2: `api-<sha>` and `jobs-<sha>`):
 
 ```bash
 cd infra
-npx -y aws-cdk@2.1143.0 deploy LeoApp --require-approval never \
+npx -y aws-cdk@2.1143.0 deploy KesslerApp --require-approval never \
   -c image_tag="<older commit sha>" -c alert_email="<alert email>"
 ```
 

@@ -11,8 +11,8 @@ const departure = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "LEO Debris",
-  description: "A live map of every tracked object in low Earth orbit, with the history of how it got crowded.",
+  title: "Kessler",
+  description: "Every tracked object in Earth orbit, 1957 to now: a live map, and the history of how it got crowded.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

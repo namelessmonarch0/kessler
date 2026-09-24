@@ -1,4 +1,4 @@
-# LEO Debris: web
+# Kessler: web
 
 Next.js explorer for leo.kudayyurter.dev. Design: `../docs/superpowers/specs/2026-09-22-leo-debris-design.md` §6.
 

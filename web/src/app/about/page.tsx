@@ -4,7 +4,7 @@ import { Header } from "@/components/panels/Header";
 import { Card } from "@/components/ui/Card";
 
 export const metadata: Metadata = {
-  title: "About · LEO Debris",
+  title: "About · Kessler",
   description: "How this site was built, where the data comes from, and the MATLAB project it started as.",
 };
 
@@ -22,6 +22,11 @@ export default function About() {
             1st place. It charted debris, rocket bodies and payloads from China, Russia and the US between 1997
             and 2022, with a globe of randomly placed dots. This version covers every tracked object and owner
             from 1957 to today, places each object at its real position, and refreshes several times a day.
+          </p>
+          <p className="mt-3 text-[15px] leading-relaxed text-ink-2">
+            It is named after Donald Kessler, the NASA scientist who in 1978 warned that once low Earth orbit gets
+            crowded enough, collisions could create debris faster than it falls back to Earth. That runaway is now
+            called the Kessler syndrome.
           </p>
           <p className="label mt-4">Original team</p>
           <p className="mt-1 text-[15px] text-ink">{TEAM.join(", ")}</p>

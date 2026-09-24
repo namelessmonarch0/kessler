@@ -13,11 +13,11 @@ from aws_cdk import aws_sns as sns
 from aws_cdk import aws_sns_subscriptions as subs
 from constructs import Construct
 
-SSM_PREFIX = "/leo/"
-REPO_NAME = "leo-api"
+SSM_PREFIX = "/kessler/"
+REPO_NAME = "kessler-api"
 
 
-class LeoAppStack(Stack):
+class KesslerAppStack(Stack):
     def __init__(self, scope: Construct, construct_id: str, *, image_tag: str,
                  alert_email: str, api_reserved_concurrency: int, **kwargs) -> None:
         super().__init__(scope, construct_id, **kwargs)
@@ -44,14 +44,14 @@ class LeoAppStack(Stack):
 
         self.api_fn = lambda_.DockerImageFunction(
             self, "ApiFunction",
-            function_name="leo-api",
+            function_name="kessler-api",
             code=lambda_.DockerImageCode.from_ecr(repo, tag_or_digest=f"api-{image_tag}"),
             architecture=lambda_.Architecture.X86_64,
             memory_size=1024,
             timeout=Duration.seconds(60),
             reserved_concurrent_executions=api_reserved_concurrency or None,
             environment=common_env,
-            log_group=logs.LogGroup(self, "ApiLogs", log_group_name="/aws/lambda/leo-api",
+            log_group=logs.LogGroup(self, "ApiLogs", log_group_name="/aws/lambda/kessler-api",
                                     retention=logs.RetentionDays.TWO_WEEKS,
                                     removal_policy=RemovalPolicy.DESTROY),
         )
@@ -65,7 +65,7 @@ class LeoAppStack(Stack):
 
         self.jobs_fn = lambda_.DockerImageFunction(
             self, "JobsFunction",
-            function_name="leo-jobs",
+            function_name="kessler-jobs",
             code=lambda_.DockerImageCode.from_ecr(repo, tag_or_digest=f"jobs-{image_tag}",
                                                   cmd=["app.lambda_jobs.handler"]),
             architecture=lambda_.Architecture.X86_64,
@@ -73,7 +73,7 @@ class LeoAppStack(Stack):
             timeout=Duration.minutes(10),
             retry_attempts=0,
             environment=common_env,
-            log_group=logs.LogGroup(self, "JobsLogs", log_group_name="/aws/lambda/leo-jobs",
+            log_group=logs.LogGroup(self, "JobsLogs", log_group_name="/aws/lambda/kessler-jobs",
                                     retention=logs.RetentionDays.TWO_WEEKS,
                                     removal_policy=RemovalPolicy.DESTROY),
         )
@@ -82,8 +82,8 @@ class LeoAppStack(Stack):
 
         # --- schedules (spec §3.6) ---
         for name, job, minute, hour in (
-            ("leo-ingest-satcat", "ingest-satcat", "17", "5"),
-            ("leo-ingest-gp", "ingest-gp", "41", "0/6"),
+            ("kessler-ingest-satcat", "ingest-satcat", "17", "5"),
+            ("kessler-ingest-gp", "ingest-gp", "41", "0/6"),
         ):
             scheduler.Schedule(
                 self, name,
@@ -99,11 +99,11 @@ class LeoAppStack(Stack):
             )
 
         # --- a failed job keeps the last good data (spec §3.6); make sure someone hears ---
-        topic = sns.Topic(self, "Alerts", topic_name="leo-alerts")
+        topic = sns.Topic(self, "Alerts", topic_name="kessler-alerts")
         topic.add_subscription(subs.EmailSubscription(alert_email))
         alarm = cloudwatch.Alarm(
             self, "JobsErrors",
-            alarm_name="leo-jobs-errors",
+            alarm_name="kessler-jobs-errors",
             metric=self.jobs_fn.metric_errors(period=Duration.hours(1), statistic="Sum"),
             threshold=1,
             evaluation_periods=1,
@@ -118,7 +118,7 @@ class LeoAppStack(Stack):
         budgets.CfnBudget(
             self, "MonthlyBudget",
             budget=budgets.CfnBudget.BudgetDataProperty(
-                budget_name="leo-monthly", budget_type="COST", time_unit="MONTHLY",
+                budget_name="kessler-monthly", budget_type="COST", time_unit="MONTHLY",
                 budget_limit=budgets.CfnBudget.SpendProperty(amount=5, unit="USD"),
                 # the free plan's credits pay the bill, so exclude them: the $5 alert
                 # must still fire on real spend, not be masked by unused credit balance.

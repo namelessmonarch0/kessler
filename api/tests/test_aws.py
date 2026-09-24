@@ -35,7 +35,7 @@ def clear_env(monkeypatch, *names: str) -> None:
 def put_params(values: dict[str, str]) -> None:
     ssm = boto3.client("ssm", region_name=REGION)
     for name, value in values.items():
-        ssm.put_parameter(Name=f"/leo/{name}", Value=value, Type="SecureString")
+        ssm.put_parameter(Name=f"/kessler/{name}", Value=value, Type="SecureString")
 
 
 def test_load_ssm_env_sets_missing_vars_only(aws, monkeypatch):
@@ -43,7 +43,7 @@ def test_load_ssm_env_sets_missing_vars_only(aws, monkeypatch):
     monkeypatch.setenv("SPACETRACK_USER", "from-env")
     put_params({"DATABASE_URL": "postgresql://neon/db", "SPACETRACK_USER": "from-ssm",
                 "ORIGIN_SECRET": "s3cret"})
-    names = load_ssm_env("/leo/")
+    names = load_ssm_env("/kessler/")
     assert sorted(names) == ["DATABASE_URL", "ORIGIN_SECRET"]
     assert os.environ["DATABASE_URL"] == "postgresql://neon/db"
     assert os.environ["SPACETRACK_USER"] == "from-env"  # explicit env wins
@@ -53,19 +53,19 @@ def test_load_ssm_env_pages_through_many_parameters(aws, monkeypatch):
     values = {f"P{i:02d}": str(i) for i in range(23)}  # > 10 = more than one page
     clear_env(monkeypatch, *values)
     put_params(values)
-    assert len(load_ssm_env("/leo/")) == 23
+    assert len(load_ssm_env("/kessler/")) == 23
 
 
 def test_load_settings_requires_production_parameters(aws, monkeypatch):
-    monkeypatch.setenv("SSM_PREFIX", "/leo/")
+    monkeypatch.setenv("SSM_PREFIX", "/kessler/")
     clear_env(monkeypatch, "DATABASE_URL", "ORIGIN_SECRET")
     put_params({"DATABASE_URL": "postgresql://neon/db"})  # ORIGIN_SECRET forgotten
-    with pytest.raises(RuntimeError, match="/leo/ORIGIN_SECRET"):
+    with pytest.raises(RuntimeError, match="/kessler/ORIGIN_SECRET"):
         load_settings()
 
 
 def test_load_settings_reads_ssm_when_prefix_set(aws, monkeypatch):
-    monkeypatch.setenv("SSM_PREFIX", "/leo/")
+    monkeypatch.setenv("SSM_PREFIX", "/kessler/")
     clear_env(monkeypatch, "DATABASE_URL", "ORIGIN_SECRET")
     put_params({"DATABASE_URL": "postgresql://neon/db", "ORIGIN_SECRET": "s3cret"})
     settings = load_settings()

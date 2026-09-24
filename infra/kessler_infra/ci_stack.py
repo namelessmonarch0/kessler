@@ -5,7 +5,7 @@ from constructs import Construct
 GITHUB_OIDC = "token.actions.githubusercontent.com"
 
 
-class LeoCiStack(Stack):
+class KesslerCiStack(Stack):
     """Lets GitHub Actions on `main` deploy without stored AWS keys (spec §9)."""
 
     def __init__(self, scope: Construct, construct_id: str, *, github_repo: str,
@@ -15,7 +15,7 @@ class LeoCiStack(Stack):
                                           client_ids=["sts.amazonaws.com"])
         role = iam.Role(
             self, "DeployRole",
-            role_name="leo-github-deploy",
+            role_name="kessler-github-deploy",
             assumed_by=iam.WebIdentityPrincipal(provider.oidc_provider_arn, conditions={
                 "StringEquals": {
                     f"{GITHUB_OIDC}:aud": "sts.amazonaws.com",
@@ -33,17 +33,17 @@ class LeoCiStack(Stack):
                      "ecr:CompleteLayerUpload", "ecr:InitiateLayerUpload", "ecr:PutImage",
                      "ecr:UploadLayerPart"],
             resources=[self.format_arn(service="ecr", resource="repository",
-                                       resource_name="leo-api")],
+                                       resource_name="kessler-api")],
         ))
         role.add_to_policy(iam.PolicyStatement(
             actions=["lambda:InvokeFunction"],
             resources=[self.format_arn(service="lambda", resource="function",
-                                       resource_name="leo-jobs",
+                                       resource_name="kessler-jobs",
                                        arn_format=ArnFormat.COLON_RESOURCE_NAME)],
         ))
         role.add_to_policy(iam.PolicyStatement(
             actions=["cloudformation:DescribeStacks"],
             resources=[self.format_arn(service="cloudformation", resource="stack",
-                                       resource_name="LeoApp/*")],
+                                       resource_name="KesslerApp/*")],
         ))
         CfnOutput(self, "DeployRoleArn", value=role.role_arn)

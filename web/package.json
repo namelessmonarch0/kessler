@@ -1,5 +1,5 @@
 {
-  "name": "leo-web",
+  "name": "kessler-web",
   "version": "0.1.0",
   "scripts": {
     "dev": "next dev",

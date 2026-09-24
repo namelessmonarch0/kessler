@@ -2,6 +2,6 @@
   "app": "uv run python app.py",
   "context": {
     "api_reserved_concurrency": 0,
-    "github_repo": "namelessmonarch0/leo-debris"
+    "github_repo": "namelessmonarch0/kessler"
   }
 }

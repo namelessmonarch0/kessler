@@ -52,7 +52,7 @@ def run_job(
 
 
 def main(argv: list[str] | None = None) -> None:
-    parser = argparse.ArgumentParser(description="Run a LEO Debris data job.")
+    parser = argparse.ArgumentParser(description="Run a Kessler data job.")
     parser.add_argument("job", choices=JOBS)
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")

@@ -1,5 +1,7 @@
 # LEO Debris: Design Spec
 
+> **Renamed to Kessler on 2026-09-24.** The data covers every orbit and every object type, not only LEO debris. Public name *Kessler* (tagline: "Every tracked object in Earth orbit, 1957 to now."), GitHub repo `namelessmonarch0/kessler`, AWS names use the `kessler-` prefix (stacks `KesslerRegistry`/`KesslerCi`/`KesslerApp`, SSM path `/kessler/`). The subdomain stays `leo.kudayyurter.dev`. The rest of this document keeps its original wording as a record.
+
 **Date:** 2026-09-22 · **Author:** Kuday Yurter (with Claude) · **Status:** draft for review
 
 ## 1. Purpose

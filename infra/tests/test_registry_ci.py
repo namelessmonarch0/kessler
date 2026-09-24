@@ -5,26 +5,26 @@ from tests.conftest import ENV
 
 
 def build():
-    from leo_infra.ci_stack import LeoCiStack
-    from leo_infra.registry_stack import LeoRegistryStack
+    from kessler_infra.ci_stack import KesslerCiStack
+    from kessler_infra.registry_stack import KesslerRegistryStack
 
     app = App()
-    reg = LeoRegistryStack(app, "LeoRegistry", env=ENV)
-    ci = LeoCiStack(app, "LeoCi", env=ENV, github_repo="owner/repo")
+    reg = KesslerRegistryStack(app, "KesslerRegistry", env=ENV)
+    ci = KesslerCiStack(app, "KesslerCi", env=ENV, github_repo="owner/repo")
     return Template.from_stack(reg), Template.from_stack(ci)
 
 
 def test_registry_keeps_last_ten_images():
     reg, _ = build()
     reg.has_resource_properties("AWS::ECR::Repository", {
-        "RepositoryName": "leo-api",
+        "RepositoryName": "kessler-api",
         "LifecyclePolicy": {"LifecyclePolicyText": Match.string_like_regexp('"countNumber":10')}})
 
 
 def test_registry_allows_lambda_image_pull():
     reg, _ = build()
     reg.has_resource_properties("AWS::ECR::Repository", {
-        "RepositoryName": "leo-api",
+        "RepositoryName": "kessler-api",
         "RepositoryPolicyText": {"Statement": Match.array_with([Match.object_like({
             "Principal": {"Service": "lambda.amazonaws.com"},
             "Action": Match.array_with(["ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer"]),
@@ -39,7 +39,7 @@ def test_ci_role_trusts_only_main_of_the_repo():
         "Url": "https://token.actions.githubusercontent.com",
         "ClientIdList": ["sts.amazonaws.com"]})
     ci.has_resource_properties("AWS::IAM::Role", {
-        "RoleName": "leo-github-deploy",
+        "RoleName": "kessler-github-deploy",
         "AssumeRolePolicyDocument": {"Statement": [Match.object_like({
             "Action": "sts:AssumeRoleWithWebIdentity",
             "Condition": {

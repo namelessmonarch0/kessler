@@ -35,7 +35,7 @@ jobs:
       - name: Build and push images
         working-directory: api
         run: |
-          REPO="${{ steps.ecr.outputs.registry }}/leo-api"
+          REPO="${{ steps.ecr.outputs.registry }}/kessler-api"
           for target in api jobs; do
             docker buildx build --platform linux/amd64 --provenance=false --push \
               --target "$target" -t "$REPO:$target-$TAG" .
@@ -46,21 +46,21 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.12"
-      - name: cdk deploy LeoApp
+      - name: cdk deploy KesslerApp
         working-directory: infra
         run: |
           uv sync --locked
-          npx -y aws-cdk@2.1143.0 deploy LeoApp --require-approval never \
+          npx -y aws-cdk@2.1143.0 deploy KesslerApp --require-approval never \
             -c image_tag="$TAG" -c alert_email="${{ secrets.ALERT_EMAIL }}"
       - name: Run database migrations
         run: |
-          aws lambda invoke --function-name leo-jobs --cli-binary-format raw-in-base64-out \
+          aws lambda invoke --function-name kessler-jobs --cli-binary-format raw-in-base64-out \
             --cli-read-timeout 900 --payload '{"job":"migrate"}' out.json > meta.json
           cat out.json
           if grep -q FunctionError meta.json; then echo "migration failed"; exit 1; fi
       - name: Smoke test
         run: |
-          URL=$(aws cloudformation describe-stacks --stack-name LeoApp \
+          URL=$(aws cloudformation describe-stacks --stack-name KesslerApp \
             --query "Stacks[0].Outputs[?OutputKey=='ApiFunctionUrl'].OutputValue" --output text)
           test "$(curl -s -o /dev/null -w '%{http_code}' "${URL}api/health")" = 200
           test "$(curl -s -o /dev/null -w '%{http_code}' "${URL}api/meta")" = 403
