@@ -1,7 +1,7 @@
 # Go-live runbook
 
 This is the one-time checklist to take Kessler from a working local checkout to a live
-site at `leo.kudayyurter.dev`, backed by AWS Lambda (us-east-2) and a Neon Postgres database,
+site at `kessler.kudayyurter.dev`, backed by AWS Lambda (us-east-2) and a Neon Postgres database,
 deployed automatically from `main` via GitHub Actions.
 
 `<...>` marks a value the owner supplies at run time. None of these values are ever committed
@@ -210,20 +210,20 @@ workflow**.
 - Deploy. If the deployment shows **"Canceled by Ignored Build Step"**, that's `ignoreCommand`
   in `web/vercel.json` deciding this build has no relevant changes — click **Redeploy** to force
   it anyway.
-- Add the custom domain `leo.kudayyurter.dev` to the project. Vercel will show a pending DNS
+- Add the custom domain `kessler.kudayyurter.dev` to the project. Vercel will show a pending DNS
   record; the owner then adds, at the domain registrar for `kudayyurter.dev`:
 
   ```
-  CNAME  leo  cname.vercel-dns.com
+  CNAME  kessler  cname.vercel-dns.com
   ```
 
 ## 10. Verify the site
 
-Visit `https://leo.kudayyurter.dev` and confirm:
+Visit `https://kessler.kudayyurter.dev` and confirm:
 
 - The globe renders with debris objects.
 - The charts load real data.
-- `curl -s -D - -o /dev/null "https://leo.kudayyurter.dev/api/globe/snapshot"` shows
+- `curl -s -D - -o /dev/null "https://kessler.kudayyurter.dev/api/globe/snapshot"` shows
   `x-vercel-cache: MISS` (or similar) on the first request and `x-vercel-cache: HIT` on the
   second, within the snapshot's cache window.
 

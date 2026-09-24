@@ -1,6 +1,6 @@
 # Space Debris and Objects in LEO
 
-> The original MATLAB App Designer project (1st place). It lived in the `DebrisInLEO` repo and was rebuilt as [Kessler](../README.md), a live website at [leo.kudayyurter.dev](https://leo.kudayyurter.dev). Open this folder in MATLAB to run the app.
+> The original MATLAB App Designer project (1st place). It lived in the `DebrisInLEO` repo and was rebuilt as [Kessler](../README.md), a live website at [kessler.kudayyurter.dev](https://kessler.kudayyurter.dev). Open this folder in MATLAB to run the app.
 
 This project focuses on the analysis and visualization of space debris and objects in Low Earth Orbit (LEO), highlighting data from key space-faring nations.
 

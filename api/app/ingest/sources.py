@@ -3,7 +3,7 @@ from collections.abc import Callable
 
 import httpx
 
-USER_AGENT = "kessler/0.1 (+https://leo.kudayyurter.dev)"
+USER_AGENT = "kessler/0.1 (+https://kessler.kudayyurter.dev)"
 
 CELESTRAK_SATCAT_URL = "https://celestrak.org/pub/satcat.csv"
 CELESTRAK_GP_ACTIVE_URL = "https://celestrak.org/NORAD/elements/gp.php?GROUP=active&FORMAT=csv"

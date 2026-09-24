@@ -2,7 +2,7 @@
 
 **Every tracked object in Earth orbit, 1957 to now.** A live 3D globe of about 30,000 objects in orbit right now, placed at their real positions, plus charts of how the sky got crowded, built from the full public catalog and refreshed several times a day.
 
-Live at **[leo.kudayyurter.dev](https://leo.kudayyurter.dev)**.
+Live at **[kessler.kudayyurter.dev](https://kessler.kudayyurter.dev)**.
 
 Named after Donald Kessler, the NASA scientist who in 1978 described how collisions in a crowded orbit could cascade into more debris than falls back to Earth.
 

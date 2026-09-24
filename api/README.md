@@ -1,6 +1,6 @@
 # Kessler API
 
-FastAPI + Postgres backend for leo.kudayyurter.dev. Design: `../docs/superpowers/specs/2026-09-22-leo-debris-design.md`.
+FastAPI + Postgres backend for kessler.kudayyurter.dev. Design: `../docs/superpowers/specs/2026-09-22-leo-debris-design.md`.
 
 ## Local setup
 
