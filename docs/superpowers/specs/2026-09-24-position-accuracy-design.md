@@ -140,7 +140,7 @@ The deterministic CI tests (§3) carry their own fixed tolerances. Globe alignme
 
 - **T3:** requires 3D ≤ 1 km for LEO sentinels only.
 - **All sentinels and the weekly check:** use ground ≤ 1 km and |Δalt| ≤ 1 km (weekly: ground ≤ 1 km).
-- **T6:** tolerance is 0.2°, because the mesh UV is interpolated across 128×96 sphere triangles.
+- **T6:** tolerance is 0.02° of arc (tightened from 0.2° after the final review). The mesh is a sphere and objects are placed along their geocentric direction, but the land data is geodetic (WGS84), so the texture draws every point at its **geocentric** latitude ψ = atan((1 − e²)·tan φ) — where that direction meets the sphere. Drawn at geodetic latitude, continents sat up to ~0.19° (~20 km) poleward of the objects at mid-latitudes, which the old 0.2° tolerance hid. T6 compares the mesh-UV latitude with the landmark's geocentric latitude (from `geodeticToEcef`) and with the row `lonLatToTexel` draws it at; 0.02° covers the linear UV interpolation across the 128×96 triangles (≤ 0.009° in latitude, ≤ ~0.02° of arc in longitude). T6 builds the sphere from `Earth.tsx`'s exported `EARTH_RADIUS`/`EARTH_SEGMENTS` and checks `createEarthTexture` uses `flipY`. Landmarks include Bordeaux (land) and the North Atlantic at 45° (ocean), where the bias is largest.
 
 ## 6. Out of scope
 

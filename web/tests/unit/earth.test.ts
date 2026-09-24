@@ -8,6 +8,13 @@ describe("lonLatToTexel", () => {
     expect(lonLatToTexel(0, 0, 400, 200)).toEqual([200, 100]);
     expect(lonLatToTexel(180, -90, 400, 200)).toEqual([400, 200]);
   });
+  it("places latitude at its geocentric angle: 45° N sits ~0.19° south of the naive row", () => {
+    const [, ty] = lonLatToTexel(0, 45, 360, 180);
+    expect(ty - 45).toBeGreaterThan(0.19);
+    expect(ty - 45).toBeLessThan(0.195);
+    const [, tySouth] = lonLatToTexel(0, -45, 360, 180);
+    expect(tySouth - 135).toBeCloseTo(-(ty - 45), 12); // symmetric about the equator
+  });
 });
 
 describe("ringSegments", () => {

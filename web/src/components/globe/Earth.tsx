@@ -11,6 +11,19 @@ import { sunDirectionScene } from "@/lib/sun";
 import { drawEarthTexture } from "@/components/globe/earthTexture";
 import { createEarthMaterial } from "@/components/globe/earthMaterial";
 
+/** Earth sphere mesh: radius (Earth radii) and [width, height] segments. */
+export const EARTH_RADIUS = 1;
+export const EARTH_SEGMENTS = [128, 96] as const;
+
+/** The equirectangular Earth texture. flipY (three's default) puts canvas row 0, north, at v = 1. */
+export function createEarthTexture(canvas: HTMLCanvasElement): THREE.CanvasTexture {
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.flipY = true;
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = 8;
+  return texture;
+}
+
 export function Earth() {
   const { canvas, texture, material } = useMemo(() => {
     const small = typeof window !== "undefined" && window.innerWidth < 700;
@@ -18,9 +31,7 @@ export function Earth() {
     canvas.width = small ? 2048 : 4096;
     canvas.height = canvas.width / 2;
     drawEarthTexture(canvas.getContext("2d")!, null, canvas.width, canvas.height);
-    const texture = new THREE.CanvasTexture(canvas);
-    texture.colorSpace = THREE.SRGBColorSpace;
-    texture.anisotropy = 8;
+    const texture = createEarthTexture(canvas);
     return { canvas, texture, material: createEarthMaterial(texture) };
   }, []);
 
@@ -63,7 +74,7 @@ export function Earth() {
         }}
         onPointerOut={(e) => e.stopPropagation()}
       >
-        <sphereGeometry args={[1, 128, 96]} />
+        <sphereGeometry args={[EARTH_RADIUS, ...EARTH_SEGMENTS]} />
       </mesh>
       {/* ink outline (inverted hull) */}
       <mesh>

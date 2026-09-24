@@ -76,6 +76,11 @@ fails if that step regresses:
 | 4. TEME → Earth-fixed (`gstime`, `eciToEcf`, `ecefToScene`) | `web/src/lib/orbit.ts` | T3, T4 geodetic round-trip |
 | 5. Scene → globe (sphere mesh + equirectangular texture) | `web/src/components/globe/earthTexture.ts` | T6 globe alignment |
 
+The Earth mesh is a sphere and objects sit along their geocentric direction, while the land data is
+geodetic (WGS84). `lonLatToTexel` therefore draws each point at its geocentric latitude
+ψ = atan((1 − e²)·tan φ); at geodetic latitude the continents would sit up to ~0.19° (~20 km)
+poleward of the objects at mid-latitudes. T6 pins this at 0.02°.
+
 Web-side tests T2–T5 live in `web/tests/unit/accuracy.test.ts`; T6 (globe alignment) lives in
 `web/tests/unit/globeAlignment.test.ts`. All of them run against reference data
 frozen into `web/tests/fixtures/accuracy/` (see "Regenerating fixtures" below). None of these
@@ -94,7 +99,7 @@ globe.
 | \|Δlat\|, \|Δlon\| (CI, every sentinel) | ≤ 0.01° |
 | 3D Earth-fixed distance (CI, LEO sentinels only) | ≤ 1 km |
 | SGP4 TEME vs the official vector set (CI) | ≤ 0.001 km |
-| Globe UV vs latitude/longitude (CI) | ≤ 0.2° |
+| Globe UV vs geocentric latitude/longitude (CI) | ≤ 0.02° of arc |
 | Land/ocean class (CI) | exact |
 | Math error ground distance, weekly max | ≤ 1 km |
 | ISS ground distance vs wheretheiss.at, weekly max | ≤ 25 km |
