@@ -20,5 +20,6 @@ class LeoRegistryStack(Stack):
         self.repo.add_to_resource_policy(iam.PolicyStatement(
             principals=[iam.ServicePrincipal("lambda.amazonaws.com")],
             actions=["ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer"],
-            conditions={"StringEquals": {"aws:SourceAccount": self.account}},
+            conditions={"StringLike": {"aws:sourceArn":
+                f"arn:aws:lambda:{self.region}:{self.account}:function:*"}},
         ))

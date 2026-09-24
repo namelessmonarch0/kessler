@@ -28,7 +28,8 @@ def test_registry_allows_lambda_image_pull():
         "RepositoryPolicyText": {"Statement": Match.array_with([Match.object_like({
             "Principal": {"Service": "lambda.amazonaws.com"},
             "Action": Match.array_with(["ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer"]),
-            "Condition": {"StringEquals": {"aws:SourceAccount": ENV.account}},
+            "Condition": {"StringLike": {"aws:sourceArn":
+                f"arn:aws:lambda:{ENV.region}:{ENV.account}:function:*"}},
         })])}})
 
 
@@ -55,6 +56,8 @@ def test_ci_role_permissions_are_scoped():
         statements += res["Properties"]["PolicyDocument"]["Statement"]
     flat = str(statements)
     assert "cdk-hnb659fds-" in flat            # may assume the CDK bootstrap roles
+    assert "sts:AssumeRole" in flat
+    assert "sts:TagSession" in flat            # cdk deploy passes session tags
     assert "ecr:PutImage" in flat              # may push images
     assert "lambda:InvokeFunction" in flat     # may run the migrate job
     assert "cloudformation:DescribeStacks" in flat  # may read the smoke-test output

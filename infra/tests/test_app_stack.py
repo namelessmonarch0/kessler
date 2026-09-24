@@ -68,15 +68,30 @@ def test_bucket_is_private_and_tls_only(app_template):
             "Bool": {"aws:SecureTransport": "false"}}})])}})
 
 
-def _policy_actions(template, role_logical_prefix):
-    actions = []
+def _policy_statements(template, role_logical_prefix):
+    statements = []
     for lid, res in template.find_resources("AWS::IAM::Policy").items():
         if not lid.startswith(role_logical_prefix):
             continue
-        for st in res["Properties"]["PolicyDocument"]["Statement"]:
-            a = st["Action"]
-            actions += a if isinstance(a, list) else [a]
+        statements += res["Properties"]["PolicyDocument"]["Statement"]
+    return statements
+
+
+def _policy_actions(template, role_logical_prefix):
+    actions = []
+    for st in _policy_statements(template, role_logical_prefix):
+        a = st["Action"]
+        actions += a if isinstance(a, list) else [a]
     return actions
+
+
+def _ssm_resources(template, role_logical_prefix):
+    for st in _policy_statements(template, role_logical_prefix):
+        actions = st["Action"] if isinstance(st["Action"], list) else [st["Action"]]
+        if "ssm:GetParametersByPath" in actions:
+            res = st["Resource"]
+            return res if isinstance(res, list) else [res]
+    raise AssertionError("no ssm:GetParametersByPath statement found")
 
 
 def test_api_can_read_but_not_write_snapshots(app_template):
@@ -91,6 +106,17 @@ def test_jobs_can_write_snapshots(app_template):
     actions = _policy_actions(app_template(), "JobsFunctionServiceRoleDefaultPolicy")
     assert any(a.startswith("s3:PutObject") for a in actions)
     assert "ssm:GetParametersByPath" in actions
+
+
+def test_ssm_read_covers_prefix_and_path(app_template):
+    # GetParametersByPath(Path="/leo/") needs both the bare prefix ARN and the
+    # wildcard-under-it ARN granted, or the call is denied.
+    t = app_template()
+    role_prefixes = ("ApiFunctionServiceRoleDefaultPolicy", "JobsFunctionServiceRoleDefaultPolicy")
+    for role_prefix in role_prefixes:
+        dumped = json.dumps(_ssm_resources(t, role_prefix))
+        assert "parameter/leo\"" in dumped
+        assert "parameter/leo/*\"" in dumped
 
 
 def _schedules(template):
@@ -123,11 +149,18 @@ def test_job_errors_alarm_emails_owner(app_template):
 
 def test_budget_alerts_at_five_dollars(app_template):
     t = app_template()
+    # include_credit=False: the free plan's credits pay the bill, so credits must not
+    # mask real spend from the $5 alert.
     t.has_resource_properties("AWS::Budgets::Budget", {"Budget": {
         "BudgetName": "leo-monthly", "BudgetType": "COST", "TimeUnit": "MONTHLY",
-        "BudgetLimit": {"Amount": 5, "Unit": "USD"}}})
+        "BudgetLimit": {"Amount": 5, "Unit": "USD"},
+        "CostTypes": {"IncludeCredit": False}}})
     budget = next(iter(t.find_resources("AWS::Budgets::Budget").values()))["Properties"]
     kinds = {n["Notification"]["NotificationType"] for n in budget["NotificationsWithSubscribers"]}
     assert kinds == {"ACTUAL", "FORECASTED"}
     for n in budget["NotificationsWithSubscribers"]:
         assert n["Subscribers"] == [{"SubscriptionType": "EMAIL", "Address": "owner@example.com"}]
+        notification = n["Notification"]
+        assert notification["ComparisonOperator"] == "GREATER_THAN"
+        assert notification["Threshold"] == 100
+        assert notification["ThresholdType"] == "PERCENTAGE"

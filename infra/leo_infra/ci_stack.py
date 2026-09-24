@@ -23,7 +23,7 @@ class LeoCiStack(Stack):
                 }}),
         )
         role.add_to_policy(iam.PolicyStatement(
-            actions=["sts:AssumeRole"],
+            actions=["sts:AssumeRole", "sts:TagSession"],
             resources=[f"arn:aws:iam::{self.account}:role/cdk-hnb659fds-*-{self.account}-{self.region}"],
         ))
         role.add_to_policy(iam.PolicyStatement(actions=["ecr:GetAuthorizationToken"],

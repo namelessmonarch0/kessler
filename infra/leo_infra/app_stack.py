@@ -33,8 +33,12 @@ class LeoAppStack(Stack):
         )
         ssm_read = iam.PolicyStatement(
             actions=["ssm:GetParametersByPath"],
-            resources=[self.format_arn(service="ssm", resource="parameter",
-                                       resource_name=SSM_PREFIX.strip("/"))],
+            resources=[
+                self.format_arn(service="ssm", resource="parameter",
+                                resource_name=SSM_PREFIX.strip("/")),
+                self.format_arn(service="ssm", resource="parameter",
+                                resource_name=f"{SSM_PREFIX.strip('/')}/*"),
+            ],
         )
         common_env = {"SSM_PREFIX": SSM_PREFIX, "SNAPSHOT_BUCKET": self.bucket.bucket_name}
 
@@ -116,6 +120,9 @@ class LeoAppStack(Stack):
             budget=budgets.CfnBudget.BudgetDataProperty(
                 budget_name="leo-monthly", budget_type="COST", time_unit="MONTHLY",
                 budget_limit=budgets.CfnBudget.SpendProperty(amount=5, unit="USD"),
+                # the free plan's credits pay the bill, so exclude them: the $5 alert
+                # must still fire on real spend, not be masked by unused credit balance.
+                cost_types=budgets.CfnBudget.CostTypesProperty(include_credit=False),
             ),
             notifications_with_subscribers=[
                 budgets.CfnBudget.NotificationWithSubscribersProperty(
