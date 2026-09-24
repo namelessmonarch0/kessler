@@ -134,6 +134,14 @@ All tests below are Vitest in `web/tests/unit/accuracy.test.ts`, except the API 
 
 The deterministic CI tests (§3) carry their own fixed tolerances. Globe alignment is exact (land and ocean classes).
 
+## 5a. Clarification (2026-09-24, during planning)
+
+"Math error" means the **ground distance between the two subpoints** plus the **altitude difference**, not raw 3D km. Skyfield applies real UT1−UTC (up to 0.9 s), and at GEO radius that rotates positions about 3 km in 3D while moving the ground point by less than 0.004°, which is invisible on the globe.
+
+- **T3:** requires 3D ≤ 1 km for LEO sentinels only.
+- **All sentinels and the weekly check:** use ground ≤ 1 km and |Δalt| ≤ 1 km (weekly: ground ≤ 1 km).
+- **T6:** tolerance is 0.2°, because the mesh UV is interpolated across 128×96 sphere triangles.
+
 ## 6. Out of scope
 
 - Correcting positions automatically.
