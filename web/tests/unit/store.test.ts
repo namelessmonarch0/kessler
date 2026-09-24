@@ -61,3 +61,16 @@ describe("panel visibility in the store", () => {
     expect(useExplorer.getState().panels.search).toBe(true);
   });
 });
+
+describe("mobile sheet open state", () => {
+  it("starts open, can be closed and reopened, and resets to open", () => {
+    expect(useExplorer.getState().mobileSheetOpen).toBe(true);
+    useExplorer.getState().setMobileSheetOpen(false);
+    expect(useExplorer.getState().mobileSheetOpen).toBe(false);
+    useExplorer.getState().setMobileSheetOpen(true);
+    expect(useExplorer.getState().mobileSheetOpen).toBe(true);
+    useExplorer.getState().setMobileSheetOpen(false);
+    useExplorer.getState().reset();
+    expect(useExplorer.getState().mobileSheetOpen).toBe(true);
+  });
+});

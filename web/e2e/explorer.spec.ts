@@ -80,6 +80,17 @@ test("phone: bottom sheet with tabs, no horizontal overflow", async ({ page }) =
   const sheet = page.getByTestId("mobile-sheet");
   await expect(sheet).toBeVisible();
   await expect(page.getByTestId("panel-dock")).toHaveCount(0);
+  // The Live/Fast controls moved to a top bar on phone (see GlobeSection) so the open sheet,
+  // which covers roughly the lower half of the screen, never covers them.
+  const live = page.getByRole("button", { name: "Live" });
+  await expect(live).toBeVisible();
+  const liveBox = await live.boundingBox();
+  const sheetBox = await sheet.boundingBox();
+  if (!liveBox || !sheetBox) throw new Error("missing bounding box for Live button or sheet");
+  const overlap = liveBox.x < sheetBox.x + sheetBox.width && sheetBox.x < liveBox.x + liveBox.width
+    && liveBox.y < sheetBox.y + sheetBox.height && sheetBox.y < liveBox.y + liveBox.height;
+  expect(overlap, "Live button must not overlap the sheet").toBe(false);
+  expect(liveBox.y + liveBox.height, "Live button should sit in the top 20% of the screen").toBeLessThanOrEqual(844 * 0.2);
   await sheet.getByRole("tab", { name: "History" }).click();
   await expect(page.locator("path[data-series]")).toHaveCount(3, { timeout: 10_000 });
   await sheet.getByRole("tab", { name: "Overview" }).click();

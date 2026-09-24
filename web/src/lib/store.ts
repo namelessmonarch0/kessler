@@ -9,6 +9,10 @@ interface ExplorerState extends Filters {
   selectedId: number | null;
   timeScale: 1 | 4320;
   panels: Record<PanelId, boolean>;
+  // Whether the phone bottom sheet (see MobileSheet.tsx) is expanded. Lives here, not as local
+  // component state, so GlobeScene (inside the <Canvas> tree, not a descendant of MobileSheet)
+  // can react to it too, shifting the globe's framing to clear the sheet while it's open.
+  mobileSheetOpen: boolean;
   toggleType: (t: ObjectType) => void;
   setOwners: (codes: string[]) => void;
   toggleOrbit: (k: keyof Orbits) => void;
@@ -17,16 +21,18 @@ interface ExplorerState extends Filters {
   setPanel: (id: PanelId, shown: boolean) => void;
   togglePanel: (id: PanelId) => void;
   hydratePanels: () => void;
+  setMobileSheetOpen: (open: boolean) => void;
   reset: () => void;
 }
 
-const initial = (): Filters & Pick<ExplorerState, "selectedId" | "timeScale" | "panels"> => ({
+const initial = (): Filters & Pick<ExplorerState, "selectedId" | "timeScale" | "panels" | "mobileSheetOpen"> => ({
   types: [...OBJECT_TYPES],
   owners: [],
   orbits: { leo: true, high: false },
   selectedId: null,
   timeScale: 1,
   panels: { ...DEFAULT_VISIBILITY },
+  mobileSheetOpen: true,
 });
 
 export const useExplorer = create<ExplorerState>((set) => ({
@@ -58,6 +64,7 @@ export const useExplorer = create<ExplorerState>((set) => ({
       return { panels };
     }),
   hydratePanels: () => set({ panels: loadVisibility(browserStorage()) }),
+  setMobileSheetOpen: (mobileSheetOpen) => set({ mobileSheetOpen }),
   reset: () => set(initial()),
 }));
 

@@ -5,7 +5,7 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { useCallback, useEffect, useRef } from "react";
 import * as THREE from "three";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
-import { initialDistance } from "@/lib/camera";
+import { phoneInitialDistance, phoneViewOffset, sheetCoveredHeight } from "@/lib/camera";
 import { simClock } from "@/lib/clock";
 import type { OrbitRecord } from "@/lib/snapshot";
 import { useExplorer } from "@/lib/store";
@@ -47,6 +47,7 @@ export function GlobeScene({
   const controls = useRef<OrbitControlsImpl>(null);
   const timeScale = useExplorer((s) => s.timeScale);
   const selectedId = useExplorer((s) => s.selectedId);
+  const mobileSheetOpen = useExplorer((s) => s.mobileSheetOpen);
   // Sparse: index 0 = LEO, 1 = HIGH. A group whose snapshot hasn't loaded (or errored) yet
   // leaves a hole here rather than a function — findPosition skips holes instead of calling them.
   const locators = useRef<(Locator | undefined)[]>([]);
@@ -55,11 +56,30 @@ export function GlobeScene({
 
   useEffect(() => {
     const dir = new THREE.Vector3(0.6, 0.9, 3.6).normalize();
-    camera.position.copy(dir.multiplyScalar(initialDistance(size.width / Math.max(size.height, 1))));
+    // Below 640px (the phone breakpoint — see global-constraints.md and useIsMobile) the bottom
+    // sheet defaults open, so size the initial distance for that (worst-case, sheet-open) area —
+    // not the full screen — so the whole Earth fits above it once the setViewOffset shift below
+    // is applied. If the sheet later closes there's simply extra clearance, never a crop.
+    const isPhone = size.width < 640;
+    const covered = isPhone ? sheetCoveredHeight(size.height, true) : 0;
+    camera.position.copy(dir.multiplyScalar(phoneInitialDistance(size.width, size.height, covered)));
     camera.lookAt(0, 0, 0);
     // Once, at mount: later resizes keep whatever zoom the user chose.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [camera]);
+
+  // Re-centre the globe's projection above the sheet (open) or on the full screen (closed) as the
+  // phone sheet is toggled or the viewport resizes. Desktop/tablet (>=640px) always clears any
+  // offset — this never applies there. Doesn't touch camera.position/zoom (OrbitControls owns
+  // that after mount) or fight the select-driven flyTo tween below, which also only moves
+  // position — setViewOffset is a separate, compositable adjustment to the projection matrix.
+  useEffect(() => {
+    const isPhone = size.width < 640;
+    const covered = isPhone ? sheetCoveredHeight(size.height, mobileSheetOpen) : 0;
+    const offset = phoneViewOffset(size.width, size.height, covered);
+    if (offset) camera.setViewOffset(offset.fullWidth, offset.fullHeight, offset.offsetX, offset.offsetY, offset.viewWidth, offset.viewHeight);
+    else camera.clearViewOffset();
+  }, [camera, size.width, size.height, mobileSheetOpen]);
 
   useEffect(() => {
     if (selectedId === null) return;

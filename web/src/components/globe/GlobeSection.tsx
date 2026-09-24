@@ -35,9 +35,12 @@ function Readout({ live }: { live: boolean }) {
       const lon = `${Math.abs(s.lonDeg).toFixed(1)}°${s.lonDeg >= 0 ? "E" : "W"}`;
       const iso = d.toISOString();
       setFull(`${iso.slice(0, 16).replace("T", " ")} UTC · SUN OVER ${lat} ${lon}`);
-      // Shortened form for narrow screens (drops the date and "OVER" so it fits on one line
-      // over the object cloud instead of wrapping/overlapping — see GlobeSection review notes).
-      setShort(`${iso.slice(11, 16)} UTC · SUN ${lat} ${lon}`);
+      // Shortened form for phone widths, shown in the top bar (see GlobeSection): drops the date,
+      // "OVER", and the decimal degree so the whole thing stays on one line at 390px instead of
+      // wrapping onto a second line and eating into the globe's headroom.
+      const latShort = `${Math.round(Math.abs(s.latDeg))}°${s.latDeg >= 0 ? "N" : "S"}`;
+      const lonShort = `${Math.round(Math.abs(s.lonDeg))}°${s.lonDeg >= 0 ? "E" : "W"}`;
+      setShort(`${iso.slice(11, 16)} UTC · ${latShort} ${lonShort}`);
     };
     update();
     const id = window.setInterval(update, 1000);
@@ -155,10 +158,10 @@ export function GlobeSection() {
         {webgl && !broken && status === "error" && <p className="text-sm text-ink-2">Data unavailable. The Earth is shown without objects.</p>}
       </div>
       {/* On phone widths (<640px) the panel sheet docks at the bottom of the screen (see
-          MobileSheet), so these controls sit above its max extent (60dvh + the sheet's own 8px
-          inset + a small gap) instead of at the usual bottom-4, or the collapsed sheet's tab bar
-          would still cover them when it's expanded. */}
-      <div className="absolute bottom-[calc(60dvh+16px)] left-1/2 flex -translate-x-1/2 flex-col items-center gap-2 sm:bottom-4">
+          MobileSheet) and can cover roughly the lower half of it, so these controls move to a top
+          bar there instead of sitting at the usual bottom-4 (which the sheet would cover, or come
+          close to). At >=640px (tablet/desktop, no sheet) this is unchanged from before Task 5. */}
+      <div className="absolute left-1/2 top-3 flex -translate-x-1/2 flex-col items-center gap-2 sm:top-auto sm:bottom-4">
         <Readout live={webgl === true && !broken} />
         <div className="flex gap-2">
           {([1, 4320] as const).map((s) => (

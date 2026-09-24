@@ -7,8 +7,11 @@ import { useExplorer } from "@/lib/store";
 
 export function MobileSheet({ ctx }: { ctx: PanelCtx }) {
   const [active, setActive] = useState<PanelId>("overview");
-  const [open, setOpen] = useState(true);
   const selectedId = useExplorer((s) => s.selectedId);
+  // Lives in the store (not local state) so GlobeScene, inside the <Canvas> tree elsewhere in the
+  // page, can read it too and keep the globe framed above the sheet while it's open.
+  const open = useExplorer((s) => s.mobileSheetOpen);
+  const setOpen = useExplorer((s) => s.setMobileSheetOpen);
 
   useEffect(() => {
     if (selectedId !== null) {
@@ -19,7 +22,7 @@ export function MobileSheet({ ctx }: { ctx: PanelCtx }) {
       setActive("search");
       setOpen(true);
     }
-  }, [selectedId]);
+  }, [selectedId, setOpen]);
 
   return (
     <div data-testid="mobile-sheet" className="panel fixed inset-x-2 bottom-2 z-20 max-h-[60dvh] !p-0">
@@ -39,7 +42,7 @@ export function MobileSheet({ ctx }: { ctx: PanelCtx }) {
             {p.title}
           </button>
         ))}
-        <button type="button" onClick={() => setOpen((o) => !o)} aria-label={open ? "Collapse panel" : "Expand panel"} className="ml-auto shrink-0 px-2 text-ink-2">
+        <button type="button" onClick={() => setOpen(!open)} aria-label={open ? "Collapse panel" : "Expand panel"} className="ml-auto shrink-0 px-2 text-ink-2">
           {open ? "▾" : "▴"}
         </button>
       </div>
