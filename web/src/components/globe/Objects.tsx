@@ -13,14 +13,15 @@ import { createDebrisGeometry, createRocketBodyGeometry, createSatelliteGeometry
 
 type Kind = "sat" | "rb" | "deb";
 const kindOf = (t: ObjectType): Kind => (t === "PAY" ? "sat" : t === "R/B" ? "rb" : "deb");
-// Debris and rocket-body geometry (objectGeometries.ts) is intrinsically much smaller on screen
-// than a satellite's wide solar panels (~3.6 world-unit span vs ~1.2 for debris and ~0.6 for a
-// rocket body's diameter): at equal SIZE_FACTOR, debris/rocket-body instances render at only a
-// couple of pixels and are visually swamped by satellites even once their colour reads correctly
-// (fix round 1 measured 1.17% orange/debris and ~0% violet/rocket-body pixels in the object cloud
-// with SIZE_FACTOR.deb at 1.0). These factors are bumped further so each kind reaches a
-// comparable on-screen footprint instead of a comparable *scale* value.
-const SIZE_FACTOR: Record<Kind, number> = { sat: 1, rb: 1.8, deb: 1.6 };
+// Fix round 1 bumped these to rb:1.8/deb:1.6, reasoning from debris/rocket-body geometry being
+// intrinsically smaller on screen than a satellite's wide solar panels. But that measurement was
+// taken against the *local* dev DB, which (no Space-Track credentials locally) has ~0 real
+// debris/rocket-body position records — so the low pixel share measured there was a data gap, not
+// evidence the base size reads poorly. Re-measured in fix round 2 against the real production API
+// (full Space-Track catalog, ~9k debris/~1k rocket bodies in LEO): at these original values,
+// debris alone is 34.85% of object-cloud pixels and rocket bodies 2.81% — both clearly, visibly
+// present (see task-2-report.md's fix-round-2 section) — so the boost wasn't needed after all.
+const SIZE_FACTOR: Record<Kind, number> = { sat: 1, rb: 1.15, deb: 1.0 };
 
 export function Objects({
   records,
@@ -64,9 +65,10 @@ export function Objects({
     // collapses toward the dark/gray end of the ramp, which washed out debris/rocket-body hues
     // almost entirely (review finding on b6f98f8's shot: ~94.5% of object pixels read near-gray).
     // A strong, colour-matched emissive keeps each kind's hue visible regardless of shading.
-    // (Fix round 1 first tried 45%/emissive per the controller's ruling — still ~94% gray after
-    // rebuilding, so this round bumps it to 60% together with the SIZE_FACTOR change below; see
-    // the fix-round-2 report section for why even that isn't the dominant lever here.)
+    // Fix round 2 confirmed against the real production catalog that these hues read clearly
+    // (debris 34.85%, rocket bodies 2.81% of object-cloud pixels; rocket bodies read paler than
+    // debris — directional-light + emissive overexposes R/B's high-blue base colour toward white
+    // faster than DEB's low-blue one — but are still visibly, distinctly lavender, not gray).
     const ramp = new THREE.DataTexture(new Uint8Array([150, 150, 150, 255, 255, 255, 255, 255]), 2, 1);
     ramp.minFilter = ramp.magFilter = THREE.NearestFilter;
     ramp.needsUpdate = true;
