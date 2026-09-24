@@ -252,6 +252,7 @@ End-to-end answer quality runs when a key is present, with optional LangSmith tr
   ordered-dither + grain post-process (cell 2 px, 7 levels, grain 0.09).
 - **Type:** Departure Mono for labels, numbers and headings; Inter Tight for body text and chat answers.
 Prototypes remain in `.superpowers/brainstorm/` (globe-sun.html, globe-anime.html, globe-2d-smooth.html).
+Superseded in part by `2026-09-24-kessler-mission-control-design.md` (layout, colours, dither scope, labels).
 
 ## 7. Error handling
 - API: 422 for invalid filters (readable message); 404 for unknown objects; 503

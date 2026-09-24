@@ -14,7 +14,7 @@ Kessler started as *Space Debris and Objects in LEO*, a MATLAB App Designer proj
 
 | Folder | What it is |
 |---|---|
-| [`web/`](web/) | Next.js + React Three Fiber site: the globe (SGP4 in a Web Worker, real-sun day/night), animated charts, search |
+| [`web/`](web/) | Next.js + React Three Fiber site: full-screen globe with floating panels (SGP4 in a Web Worker, real-sun day/night, name labels when zoomed in), animated charts, search |
 | [`api/`](api/) | FastAPI + Postgres (Neon) data API and the ingest jobs that pull the catalog from CelesTrak and Space-Track |
 | [`infra/`](infra/) | AWS CDK (Python): Lambda API and scheduled jobs, S3, schedules, alarms, budget |
 | [`matlab/`](matlab/) | The original prize-winning MATLAB app |

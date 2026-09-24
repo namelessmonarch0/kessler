@@ -1,4 +1,5 @@
 .superpowers/
+.impeccable/
 node_modules/
 .env*
 !.env.example
