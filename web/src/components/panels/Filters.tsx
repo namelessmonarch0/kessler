@@ -1,7 +1,7 @@
 "use client";
 
 import { useExplorer } from "@/lib/store";
-import { TYPE_COLORS, TYPE_LABELS, type Meta, type ObjectType } from "@/lib/types";
+import { CHART_COLORS, TYPE_LABELS, type Meta, type ObjectType } from "@/lib/types";
 import { Card } from "@/components/ui/Card";
 
 const TYPES: ObjectType[] = ["PAY", "DEB", "R/B"];
@@ -18,7 +18,7 @@ export function Filters({ meta }: { meta: Meta | null }) {
       <div className="mt-2 flex flex-wrap gap-2">
         {TYPES.map((t) => (
           <button key={t} type="button" aria-pressed={types.includes(t)} className={chip(types.includes(t))} onClick={() => toggleType(t)}>
-            <span className="mr-1.5 inline-block h-2 w-2 rounded-[2px]" style={{ background: TYPE_COLORS[t] }} />
+            <span className="mr-1.5 inline-block h-2 w-2 rounded-[2px]" style={{ background: CHART_COLORS[t] }} />
             {TYPE_LABELS[t]}
           </button>
         ))}

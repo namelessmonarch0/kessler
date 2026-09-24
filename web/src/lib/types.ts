@@ -4,10 +4,18 @@ export type Metric = "in_orbit" | "added" | "reentered";
 export type GroupBy = "none" | "type" | "owner" | "regime";
 
 export const OBJECT_TYPES: readonly ObjectType[] = ["PAY", "R/B", "DEB", "UNK"];
-export const TYPE_COLORS: Record<ObjectType, string> = {
-  PAY: "#3987e5",
-  "R/B": "#199e70",
-  DEB: "#d95926",
+/** Bright step: objects on the globe, labels and headline counts (must read over the blue/green Earth). */
+export const GLOBE_COLORS: Record<ObjectType, string> = {
+  PAY: "#fff4d6",
+  "R/B": "#c4a8ff",
+  DEB: "#ff6a3d",
+  UNK: "#bdbdbd",
+};
+/** Deeper step: chart marks and legends on #0e0e0e (validated: dark mode, all pairs). */
+export const CHART_COLORS: Record<ObjectType, string> = {
+  PAY: "#b58f3c",
+  "R/B": "#957be0",
+  DEB: "#d64a3f",
   UNK: "#8f8e88",
 };
 export const TYPE_LABELS: Record<ObjectType, string> = {

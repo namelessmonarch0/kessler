@@ -7,7 +7,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ANNOTATIONS, visibleTypeSeries } from "@/lib/chartData";
 import { fmtInt } from "@/lib/format";
 import { prefersReducedMotion } from "@/lib/motion";
-import { TYPE_COLORS, TYPE_LABELS, type TimeseriesResponse } from "@/lib/types";
+import { CHART_COLORS, TYPE_LABELS, type TimeseriesResponse } from "@/lib/types";
 import { CHAR_W, layoutAnnotations, niceMax, tooltipPosition, yearTicks, yTicks } from "@/components/charts/scales";
 
 const H = 330;
@@ -95,7 +95,7 @@ export function LineChart({ data }: { data: TimeseriesResponse }) {
       <div className="mb-2 flex flex-wrap gap-4 text-[13px] text-ink-2">
         {series.map((s) => (
           <span key={s.key} className="inline-flex items-center gap-2">
-            <i className="inline-block h-2.5 w-2.5 rounded-[3px]" style={{ background: TYPE_COLORS[s.key] }} />
+            <i className="inline-block h-2.5 w-2.5 rounded-[3px]" style={{ background: CHART_COLORS[s.key] }} />
             {TYPE_LABELS[s.key]}
           </span>
         ))}
@@ -128,13 +128,13 @@ export function LineChart({ data }: { data: TimeseriesResponse }) {
           </g>
         ))}
         {series.map((s) => (
-          <path key={s.key} data-series={s.key} d={path(s.values) ?? ""} fill="none" stroke={TYPE_COLORS[s.key]} strokeWidth={2.5} strokeLinecap="round" />
+          <path key={s.key} data-series={s.key} d={path(s.values) ?? ""} fill="none" stroke={CHART_COLORS[s.key]} strokeWidth={2.5} strokeLinecap="round" />
         ))}
         {series.map((s) => {
           const v = s.values[s.values.length - 1];
           return (
             <g key={s.key}>
-              <circle cx={x(years[years.length - 1])} cy={y(v)} r={4.5} fill={TYPE_COLORS[s.key]} stroke="#0e0e0e" strokeWidth={2} />
+              <circle cx={x(years[years.length - 1])} cy={y(v)} r={4.5} fill={CHART_COLORS[s.key]} stroke="#0e0e0e" strokeWidth={2} />
               <text x={x(years[years.length - 1]) + 10} y={y(v) + 4} className="fill-ink font-mono text-[12px]">
                 {fmtInt(v)}
               </text>

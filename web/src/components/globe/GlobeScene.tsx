@@ -2,15 +2,13 @@
 
 import { OrbitControls } from "@react-three/drei";
 import { useFrame, useThree } from "@react-three/fiber";
-import { EffectComposer } from "@react-three/postprocessing";
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import * as THREE from "three";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import { simClock } from "@/lib/clock";
 import type { OrbitRecord } from "@/lib/snapshot";
 import { useExplorer } from "@/lib/store";
 import { sunDirectionScene } from "@/lib/sun";
-import { DitherEffectImpl } from "@/components/globe/DitherEffect";
 import { Earth } from "@/components/globe/Earth";
 import { findPosition, flyTo, type Locator } from "@/components/globe/flyTo";
 import { Objects } from "@/components/globe/Objects";
@@ -47,10 +45,6 @@ export function GlobeScene({
   // Sparse: index 0 = LEO, 1 = HIGH. A group whose snapshot hasn't loaded (or errored) yet
   // leaves a hole here rather than a function — findPosition skips holes instead of calling them.
   const locators = useRef<(Locator | undefined)[]>([]);
-  const dither = useMemo(
-    () => new DitherEffectImpl({ cell: 2 * Math.min(window.devicePixelRatio, 2), levels: 7, grain: 0.09 }),
-    [],
-  );
 
   useEffect(() => simClock.setScale(timeScale), [timeScale]);
 
@@ -92,9 +86,6 @@ export function GlobeScene({
       {leo && <Objects records={leo} group="LEO" onReady={onReadyLeo} active={active} />}
       {high && <Objects records={high} group="HIGH" onReady={onReadyHigh} active={active} />}
       <OrbitControls ref={controls} enableDamping enablePan={false} minDistance={1.12} maxDistance={9} zoomSpeed={0.8} />
-      <EffectComposer multisampling={0}>
-        <primitive object={dither} dispose={null} />
-      </EffectComposer>
     </>
   );
 }

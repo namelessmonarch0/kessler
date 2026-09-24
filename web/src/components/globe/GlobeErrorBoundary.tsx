@@ -14,7 +14,7 @@ interface State {
 }
 
 /**
- * Catches any render-time throw from the WebGL/shader/R3F/postprocessing tree beneath it — a
+ * Catches any render-time throw from the WebGL/shader/R3F tree beneath it — a
  * driver quirk, a bad shader compile, an out-of-memory texture, or anything else three/R3F
  * throws during render/commit — so it takes down only the globe card instead of the whole page
  * (spec §7, review focus 1 and 4).

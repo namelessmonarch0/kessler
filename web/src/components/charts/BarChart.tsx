@@ -6,7 +6,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ownerLabel } from "@/lib/chartData";
 import { fmtInt } from "@/lib/format";
 import { prefersReducedMotion } from "@/lib/motion";
-import { TYPE_COLORS, TYPE_LABELS, type BreakdownResponse, type ObjectType, type OwnerSummary } from "@/lib/types";
+import { CHART_COLORS, TYPE_LABELS, type BreakdownResponse, type ObjectType, type OwnerSummary } from "@/lib/types";
 import { labelColumn, tooltipPosition } from "@/components/charts/scales";
 
 const KEYS: ObjectType[] = ["PAY", "DEB", "R/B"];
@@ -86,7 +86,7 @@ export function BarChart({ data, owners }: { data: BreakdownResponse; owners: Ow
                     width={w}
                     height={y.bandwidth()}
                     rx={4}
-                    fill={TYPE_COLORS[k]}
+                    fill={CHART_COLORS[k]}
                     style={{ transformOrigin: `${marginLeft}px 0px` }}
                     onPointerMove={(e) => setTip({ text: `${labels[i]} · ${TYPE_LABELS[k]}: ${fmtInt(v)}`, x: e.clientX, y: e.clientY })}
                     onPointerLeave={() => setTip(null)}

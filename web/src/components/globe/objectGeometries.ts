@@ -10,13 +10,13 @@ function tint(g: THREE.BufferGeometry, hex: string): THREE.BufferGeometry {
   return geo;
 }
 
-/** Satellite: cream body, blue panels (payload colour), small dish. Uses vertex colours. */
+/** Satellite: neutral body/panels; the material colour (payload globe colour) tints it. */
 export function createSatelliteGeometry(): THREE.BufferGeometry {
   const body = new THREE.BoxGeometry(0.6, 0.6, 0.9);
   const p1 = new THREE.BoxGeometry(1.5, 0.05, 0.6).translate(-1.1, 0, 0);
   const p2 = new THREE.BoxGeometry(1.5, 0.05, 0.6).translate(1.1, 0, 0);
   const dish = new THREE.ConeGeometry(0.28, 0.25, 12).rotateX(Math.PI / 2).translate(0, 0, 0.55);
-  return mergeGeometries([tint(body, "#f2efe6"), tint(p1, "#3987e5"), tint(p2, "#3987e5"), tint(dish, "#d8d4c8")])!;
+  return mergeGeometries([tint(body, "#ffffff"), tint(p1, "#cfd3da"), tint(p2, "#cfd3da"), tint(dish, "#e6e6e6")])!;
 }
 
 /** Rocket body: cylinder + nose cone + nozzle, pointing along +Z. */

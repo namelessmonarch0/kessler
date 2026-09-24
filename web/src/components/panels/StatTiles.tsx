@@ -2,14 +2,14 @@
 
 import { useEffect, useRef } from "react";
 import { countUp } from "@/lib/motion";
-import type { Meta, ObjectType } from "@/lib/types";
+import { GLOBE_COLORS, type Meta, type ObjectType } from "@/lib/types";
 import { PixelIcon, type PixelIconName } from "@/components/ui/PixelIcon";
 import { Unavailable } from "@/components/ui/Unavailable";
 
 const TILES: { type: ObjectType; label: string; sub: string; icon: PixelIconName; color: string }[] = [
-  { type: "PAY", label: "Payloads", sub: "active and dead satellites", icon: "sat", color: "#3987e5" },
-  { type: "DEB", label: "Debris", sub: "tracked fragments ≥10 cm", icon: "deb", color: "#d95926" },
-  { type: "R/B", label: "Rocket bodies", sub: "spent upper stages", icon: "rb", color: "#199e70" },
+  { type: "PAY", label: "Payloads", sub: "active and dead satellites", icon: "sat", color: GLOBE_COLORS.PAY },
+  { type: "DEB", label: "Debris", sub: "tracked fragments ≥10 cm", icon: "deb", color: GLOBE_COLORS.DEB },
+  { type: "R/B", label: "Rocket bodies", sub: "spent upper stages", icon: "rb", color: GLOBE_COLORS["R/B"] },
 ];
 
 function Tile({ value, index, ...t }: (typeof TILES)[number] & { value: number | null; index: number }) {

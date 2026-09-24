@@ -21,7 +21,7 @@ import { StatTiles } from "@/components/panels/StatTiles";
 import { Card } from "@/components/ui/Card";
 import { Unavailable } from "@/components/ui/Unavailable";
 
-// GlobeSection pulls in three/R3F/postprocessing/satellite.js — by far the largest slice of the
+// GlobeSection pulls in three/R3F/satellite.js — by far the largest slice of the
 // page's JS — and only ever renders client-side anyway (it probes WebGL support in an effect and
 // has no server-renderable content). Loading it with next/dynamic(ssr:false) keeps that whole
 // graph out of the page's initial bundle so tiles/search/charts can hydrate without parsing it

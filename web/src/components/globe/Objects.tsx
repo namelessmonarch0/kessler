@@ -6,7 +6,7 @@ import * as THREE from "three";
 import { simClock } from "@/lib/clock";
 import type { OrbitRecord } from "@/lib/snapshot";
 import { isVisible, useExplorer } from "@/lib/store";
-import { TYPE_COLORS, type ObjectType } from "@/lib/types";
+import { GLOBE_COLORS, type ObjectType } from "@/lib/types";
 import { usePropagation } from "@/components/globe/usePropagation";
 import { initBoundingSphere, interpolate, objectSize, writeInstance } from "@/components/globe/instances";
 import { createDebrisGeometry, createRocketBodyGeometry, createSatelliteGeometry } from "@/components/globe/objectGeometries";
@@ -56,9 +56,9 @@ export function Objects({
     ramp.minFilter = ramp.magFilter = THREE.NearestFilter;
     ramp.needsUpdate = true;
     return {
-      sat: new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: ramp, emissive: "#222222" }),
-      rb: new THREE.MeshToonMaterial({ color: TYPE_COLORS["R/B"], gradientMap: ramp, emissive: "#062a1e" }),
-      deb: new THREE.MeshToonMaterial({ color: TYPE_COLORS.DEB, gradientMap: ramp, emissive: "#3a1006" }),
+      sat: new THREE.MeshToonMaterial({ vertexColors: true, color: GLOBE_COLORS.PAY, gradientMap: ramp, emissive: "#2a2620" }),
+      rb: new THREE.MeshToonMaterial({ color: GLOBE_COLORS["R/B"], gradientMap: ramp, emissive: "#231a3a" }),
+      deb: new THREE.MeshToonMaterial({ color: GLOBE_COLORS.DEB, gradientMap: ramp, emissive: "#3a1206" }),
     };
   }, []);
   useEffect(
