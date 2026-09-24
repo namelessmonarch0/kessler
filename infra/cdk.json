@@ -1,0 +1,7 @@
+{
+  "app": "uv run python app.py",
+  "context": {
+    "api_reserved_concurrency": 10,
+    "github_repo": "namelessmonarch0/leo-debris"
+  }
+}

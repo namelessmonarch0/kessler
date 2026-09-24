@@ -15,3 +15,5 @@ web/test-results/
 web/next-env.d.ts
 web/*.tsbuildinfo
 !web/.env.example
+infra/cdk.out/
+infra/.venv/
