@@ -50,14 +50,26 @@ export function behindEarth(cam: V3, p: V3): boolean {
 
 export type Candidate = { id: number; x: number; y: number; name: string; color: string; occluded: boolean };
 export type Placed = Candidate & { left: number; top: number };
+/** Screen region (CSS px) where labels may appear: the part of the globe not covered by UI —
+ * between the top bar and the sheet in the bottom-sheet layout, or the gap between the two panel
+ * columns on desktop. */
+export type VisibleRect = { left: number; top: number; right: number; bottom: number };
+
+export const LABEL_LINE_H = 14;
+
+/** Top-left of a label pill for an object at screen (x, y): 8px up-right of it. */
+export function labelAnchor(x: number, y: number, lineH = LABEL_LINE_H): { left: number; top: number } {
+  return { left: x + 8, top: y - 8 - (lineH + 4) };
+}
 
 export function pickLabels(
   cands: Candidate[],
-  opts: { width: number; height: number; selectedId: number | null; max?: number; charW?: number; lineH?: number },
+  opts: { width: number; height: number; selectedId: number | null; max?: number; charW?: number; lineH?: number; rect?: VisibleRect },
 ): Placed[] {
-  const { width, height, selectedId, max = LABEL_MAX, charW = 7.64, lineH = 14 } = opts;
-  const onScreen = cands.filter((c) => !c.occluded && c.x >= 0 && c.x <= width && c.y >= 0 && c.y <= height);
-  const cx = width / 2, cy = height / 2;
+  const { width, height, selectedId, max = LABEL_MAX, charW = 7.64, lineH = LABEL_LINE_H } = opts;
+  const rect = opts.rect ?? { left: 0, top: 0, right: width, bottom: height };
+  const onScreen = cands.filter((c) => !c.occluded && c.x >= rect.left && c.x <= rect.right && c.y >= rect.top && c.y <= rect.bottom);
+  const cx = (rect.left + rect.right) / 2, cy = (rect.top + rect.bottom) / 2;
   const ranked = onScreen
     .map((c) => ({ c, d: Math.hypot(c.x - cx, c.y - cy) }))
     .sort((a, b) => a.d - b.d)
@@ -69,8 +81,11 @@ export function pickLabels(
   for (const c of ranked) {
     if (placed.length >= max) break;
     const w = c.name.length * charW + 12, h = lineH + 4;
-    const left = c.x + 8, top = c.y - 8 - h;
+    const { left, top } = labelAnchor(c.x, c.y, lineH);
     const box = { l: left, t: top, r: left + w, b: top + h };
+    // The whole pill must be readable: not under the top bar (above rect.top) or the right-hand
+    // panels/edge (past rect.right). It sits up-right of its point, so only those two can clip.
+    if (box.t < rect.top || box.r > rect.right) continue;
     if (boxes.some((o) => box.l < o.r && o.l < box.r && box.t < o.b && o.t < box.b)) continue;
     boxes.push(box);
     placed.push({ ...c, left, top });

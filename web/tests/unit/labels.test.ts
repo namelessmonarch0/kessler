@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { behindEarth, HIDE_ABOVE, isOccluded, LABEL_MAX, labelsActive, pickLabels, SHOW_BELOW, type Candidate } from "@/lib/labels";
+import { behindEarth, HIDE_ABOVE, isOccluded, LABEL_MAX, labelAnchor, labelsActive, pickLabels, SHOW_BELOW, type Candidate } from "@/lib/labels";
 
 const W = 1000, H = 800;
 const c = (id: number, x: number, y: number, extra: Partial<Candidate> = {}): Candidate => ({ id, x, y, name: `SAT ${id}`, color: "#fff", occluded: false, ...extra });
@@ -80,5 +80,50 @@ describe("pickLabels", () => {
       { width: W, height: H, selectedId: 1 },
     );
     expect(out.map((o) => o.id)).toEqual([4]);
+  });
+
+  // Phone: visible rect is the band between the top bar (bottom 90) and the sheet (top 500).
+  const phone = { left: 0, top: 90, right: W, bottom: 500 };
+
+  it("drops candidates outside the visible rect (under the top bar or the sheet), even when selected", () => {
+    const out = pickLabels(
+      [c(1, 500, 50), c(2, 500, 700, { name: "S" }), c(3, 500, 300)],
+      { width: W, height: H, selectedId: 2, rect: phone },
+    );
+    expect(out.map((o) => o.id)).toEqual([3]);
+  });
+
+  it("ranks from the visible rect's centre, not the screen centre", () => {
+    // rect centre is (500, 295); screen centre is (500, 400).
+    const near = c(1, 500, 300), nearScreenCentre = c(2, 500, 420);
+    const out = pickLabels([nearScreenCentre, near], { width: W, height: H, selectedId: null, max: 1, rect: phone });
+    expect(out.map((o) => o.id)).toEqual([1]);
+  });
+
+  it("desktop: only the gap between the two panel columns counts", () => {
+    const gap = { left: 360, top: 0, right: 640, bottom: H };
+    const out = pickLabels([c(1, 100, 400), c(2, 900, 400), c(3, 500, 400)], { width: W, height: H, selectedId: null, rect: gap });
+    expect(out.map((o) => o.id)).toEqual([3]);
+  });
+
+  it("defaults to the whole screen when no rect is given", () => {
+    const out = pickLabels([c(1, 5, 30), c(2, 900, 795)], { width: W, height: H, selectedId: null });
+    expect(out.map((o) => o.id).sort()).toEqual([1, 2]);
+  });
+});
+
+describe("pickLabels pill must fit the visible rect", () => {
+  it("drops a candidate whose pill would poke above the rect top (under the top bar) or past its right edge (under a panel)", () => {
+    const rect = { left: 0, top: 90, right: 600, bottom: 500 };
+    // Pill is 18px tall and sits 8px above the point: y=100 -> pill top 74 < 90.
+    // "SAT 2" pill is 5*charW+12 wide from x+8: x=560 -> right edge 560+8+5*7.64+12 > 600.
+    const out = pickLabels([c(1, 300, 100), c(2, 560, 300), c(3, 300, 300)], { width: W, height: H, selectedId: null, rect });
+    expect(out.map((o) => o.id)).toEqual([3]);
+  });
+});
+
+describe("labelAnchor", () => {
+  it("offsets the pill 8px up-right of the object", () => {
+    expect(labelAnchor(100, 200)).toEqual({ left: 108, top: 200 - 8 - 18 });
   });
 });
