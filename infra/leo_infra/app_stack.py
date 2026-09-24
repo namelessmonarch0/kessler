@@ -1,9 +1,16 @@
-from aws_cdk import CfnOutput, Duration, RemovalPolicy, Stack
+from aws_cdk import CfnOutput, Duration, RemovalPolicy, Stack, TimeZone
+from aws_cdk import aws_budgets as budgets
+from aws_cdk import aws_cloudwatch as cloudwatch
+from aws_cdk import aws_cloudwatch_actions as cw_actions
 from aws_cdk import aws_ecr as ecr
 from aws_cdk import aws_iam as iam
 from aws_cdk import aws_lambda as lambda_
 from aws_cdk import aws_logs as logs
 from aws_cdk import aws_s3 as s3
+from aws_cdk import aws_scheduler as scheduler
+from aws_cdk import aws_scheduler_targets as targets
+from aws_cdk import aws_sns as sns
+from aws_cdk import aws_sns_subscriptions as subs
 from constructs import Construct
 
 SSM_PREFIX = "/leo/"
@@ -68,6 +75,57 @@ class LeoAppStack(Stack):
         )
         self.bucket.grant_read_write(self.jobs_fn)
         self.jobs_fn.add_to_role_policy(ssm_read)
+
+        # --- schedules (spec §3.6) ---
+        for name, job, minute, hour in (
+            ("leo-ingest-satcat", "ingest-satcat", "17", "5"),
+            ("leo-ingest-gp", "ingest-gp", "41", "0/6"),
+        ):
+            scheduler.Schedule(
+                self, name,
+                schedule_name=name,
+                schedule=scheduler.ScheduleExpression.cron(minute=minute, hour=hour,
+                                                           time_zone=TimeZone.ETC_UTC),
+                target=targets.LambdaInvoke(
+                    self.jobs_fn,
+                    input=scheduler.ScheduleTargetInput.from_object({"job": job}),
+                    retry_attempts=0,
+                ),
+                time_window=scheduler.TimeWindow.off(),
+            )
+
+        # --- a failed job keeps the last good data (spec §3.6); make sure someone hears ---
+        topic = sns.Topic(self, "Alerts", topic_name="leo-alerts")
+        topic.add_subscription(subs.EmailSubscription(alert_email))
+        alarm = cloudwatch.Alarm(
+            self, "JobsErrors",
+            alarm_name="leo-jobs-errors",
+            metric=self.jobs_fn.metric_errors(period=Duration.hours(1), statistic="Sum"),
+            threshold=1,
+            evaluation_periods=1,
+            comparison_operator=cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+            treat_missing_data=cloudwatch.TreatMissingData.NOT_BREACHING,
+        )
+        alarm.add_alarm_action(cw_actions.SnsAction(topic))
+
+        # --- $5/month budget (spec §9) ---
+        subscriber = budgets.CfnBudget.SubscriberProperty(subscription_type="EMAIL",
+                                                          address=alert_email)
+        budgets.CfnBudget(
+            self, "MonthlyBudget",
+            budget=budgets.CfnBudget.BudgetDataProperty(
+                budget_name="leo-monthly", budget_type="COST", time_unit="MONTHLY",
+                budget_limit=budgets.CfnBudget.SpendProperty(amount=5, unit="USD"),
+            ),
+            notifications_with_subscribers=[
+                budgets.CfnBudget.NotificationWithSubscribersProperty(
+                    notification=budgets.CfnBudget.NotificationProperty(
+                        notification_type=kind, comparison_operator="GREATER_THAN",
+                        threshold=100, threshold_type="PERCENTAGE"),
+                    subscribers=[subscriber])
+                for kind in ("ACTUAL", "FORECASTED")
+            ],
+        )
 
         CfnOutput(self, "ApiFunctionUrl", value=url.url)
         CfnOutput(self, "SnapshotBucketName", value=self.bucket.bucket_name)

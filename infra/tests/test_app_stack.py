@@ -1,3 +1,5 @@
+import json
+
 from aws_cdk.assertions import Match
 
 
@@ -89,3 +91,43 @@ def test_jobs_can_write_snapshots(app_template):
     actions = _policy_actions(app_template(), "JobsFunctionServiceRoleDefaultPolicy")
     assert any(a.startswith("s3:PutObject") for a in actions)
     assert "ssm:GetParametersByPath" in actions
+
+
+def _schedules(template):
+    return {r["Properties"]["Name"]: r["Properties"]
+            for r in template.find_resources("AWS::Scheduler::Schedule").values()}
+
+
+def test_job_schedules(app_template):
+    s = _schedules(app_template())
+    assert set(s) == {"leo-ingest-satcat", "leo-ingest-gp"}
+    assert s["leo-ingest-satcat"]["ScheduleExpression"] == "cron(17 5 * * ? *)"
+    assert s["leo-ingest-gp"]["ScheduleExpression"] == "cron(41 0/6 * * ? *)"
+    for name, job in (("leo-ingest-satcat", "ingest-satcat"), ("leo-ingest-gp", "ingest-gp")):
+        props = s[name]
+        assert props["ScheduleExpressionTimezone"] == "Etc/UTC"
+        assert props["FlexibleTimeWindow"] == {"Mode": "OFF"}
+        assert json.loads(props["Target"]["Input"]) == {"job": job}
+        assert props["Target"]["RetryPolicy"]["MaximumRetryAttempts"] == 0
+
+
+def test_job_errors_alarm_emails_owner(app_template):
+    t = app_template()
+    t.has_resource_properties("AWS::SNS::Subscription", {
+        "Protocol": "email", "Endpoint": "owner@example.com"})
+    t.has_resource_properties("AWS::CloudWatch::Alarm", {
+        "AlarmName": "leo-jobs-errors", "MetricName": "Errors", "Namespace": "AWS/Lambda",
+        "Threshold": 1, "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+        "TreatMissingData": "notBreaching"})
+
+
+def test_budget_alerts_at_five_dollars(app_template):
+    t = app_template()
+    t.has_resource_properties("AWS::Budgets::Budget", {"Budget": {
+        "BudgetName": "leo-monthly", "BudgetType": "COST", "TimeUnit": "MONTHLY",
+        "BudgetLimit": {"Amount": 5, "Unit": "USD"}}})
+    budget = next(iter(t.find_resources("AWS::Budgets::Budget").values()))["Properties"]
+    kinds = {n["Notification"]["NotificationType"] for n in budget["NotificationsWithSubscribers"]}
+    assert kinds == {"ACTUAL", "FORECASTED"}
+    for n in budget["NotificationsWithSubscribers"]:
+        assert n["Subscribers"] == [{"SubscriptionType": "EMAIL", "Address": "owner@example.com"}]
