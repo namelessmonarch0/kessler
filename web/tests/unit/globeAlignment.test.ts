@@ -12,8 +12,8 @@ import { ecefToScene } from "@/lib/orbit";
 const topo = JSON.parse(readFileSync(new URL("../../public/geo/land-50m.json", import.meta.url), "utf8")) as Topology;
 const land = feature(topo, topo.objects.land) as unknown as FeatureCollection;
 
-const LAND = { Cairo: [31.24, 30.04], Sahara: [13, 23], Denver: [-104.99, 39.74], "Buenos Aires": [-58.38, -34.6], Beijing: [116.4, 39.9], Sydney: [151.0, -33.8] };
-const OCEAN = { "mid-Pacific": [-150, 0], "South Atlantic": [-15, -30], "Indian Ocean": [80, -20] };
+const LAND = { Cairo: [31.24, 30.04], Sahara: [13, 23], Denver: [-104.99, 39.74], "Buenos Aires": [-58.38, -34.6], Beijing: [116.4, 39.9], Sydney: [151.0, -33.8], Chukotka: [175.0, 66.0] };
+const OCEAN = { "mid-Pacific": [-150, 0], "South Atlantic": [-15, -30], "Indian Ocean": [80, -20], "Bering Sea": [-178.0, 57.0] };
 
 /** Where on the actual Earth mesh (SphereGeometry(1,128,96), as in Earth.tsx) a lat/lon lands: ray from outside toward the centre, read the interpolated UV. */
 function meshUv(lon: number, lat: number): THREE.Vector2 {
