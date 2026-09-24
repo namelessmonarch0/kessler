@@ -1,0 +1,53 @@
+name: accuracy-weekly
+on:
+  schedule:
+    - cron: "5 7 * * 1"
+  workflow_dispatch:
+permissions:
+  contents: write
+  issues: write
+concurrency:
+  group: accuracy-log
+  cancel-in-progress: false
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+        working-directory: web
+      - name: Check out audit-log
+        run: |
+          git fetch origin audit-log
+          git worktree add "$RUNNER_TEMP/log" audit-log
+      - name: Evaluate the week
+        working-directory: web
+        run: |
+          gh label create accuracy --color B60205 --description "Position accuracy out of tolerance" --force
+          OPEN=$(gh issue list --label accuracy --state open --json number --jq '[.[].number] | join(",")')
+          npm run audit:weekly -- --dir "$RUNNER_TEMP/log/audit/daily" --history "$RUNNER_TEMP/log/audit/history.json" \
+            --out-md "$RUNNER_TEMP/log/audit/AUDIT.md" --out-plan "$RUNNER_TEMP/plan.json" --open-issues "$OPEN"
+      - name: Open or comment on an issue
+        run: |
+          ACTION=$(jq -r .action "$RUNNER_TEMP/plan.json")
+          if [ "$ACTION" = open ]; then
+            gh issue create --title "$(jq -r .title "$RUNNER_TEMP/plan.json")" --body "$(jq -r .body "$RUNNER_TEMP/plan.json")" --label accuracy
+          elif [ "$ACTION" = comment ]; then
+            gh issue comment "$(jq -r .issue "$RUNNER_TEMP/plan.json")" --body "$(jq -r .body "$RUNNER_TEMP/plan.json")"
+          fi
+      - name: Commit the report
+        run: |
+          cd "$RUNNER_TEMP/log"
+          git config user.name "kessler-audit[bot]"
+          git config user.email "kessler-audit@users.noreply.github.com"
+          git add audit
+          git commit -m "audit: weekly review $(date -u +%F)" || echo "nothing to commit"
+          git push origin audit-log

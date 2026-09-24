@@ -1,0 +1,48 @@
+name: accuracy-daily
+on:
+  schedule:
+    - cron: "23 6 * * *"
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: accuracy-log
+  cancel-in-progress: false
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - run: npm ci
+        working-directory: web
+      - run: uv sync --locked
+        working-directory: tools/accuracy
+      - name: Run audit
+        working-directory: web
+        run: npm run audit:positions -- --out "$RUNNER_TEMP/today.json"
+      - name: Commit to audit-log
+        run: |
+          DAY=$(date -u +%F)
+          git config user.name "kessler-audit[bot]"
+          git config user.email "kessler-audit@users.noreply.github.com"
+          if git ls-remote --exit-code origin audit-log >/dev/null; then
+            git fetch origin audit-log
+            git worktree add "$RUNNER_TEMP/log" audit-log
+          else
+            git worktree add --orphan -b audit-log "$RUNNER_TEMP/log"
+          fi
+          mkdir -p "$RUNNER_TEMP/log/audit/daily"
+          cp "$RUNNER_TEMP/today.json" "$RUNNER_TEMP/log/audit/daily/$DAY.json"
+          cd "$RUNNER_TEMP/log"
+          git add audit
+          git commit -m "audit: daily capture $DAY" || echo "nothing to commit"
+          git push origin audit-log

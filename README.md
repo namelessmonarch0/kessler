@@ -26,4 +26,11 @@ Pushes to `main` deploy the API and jobs to AWS (GitHub Actions, OIDC) and the s
 
 See [`api/README.md`](api/README.md) and [`web/README.md`](web/README.md).
 
+## Accuracy
+
+CI proves that every step of the position pipeline (snapshot → SGP4 → Earth-fixed → globe) agrees
+with an independent reference; a scheduled daily capture and weekly review track that agreement in
+production over time. See [`web/README.md`](web/README.md#accuracy) for details, the tolerances,
+and how to run it yourself.
+
 Data: USSPACECOM via Space-Track.org; CelesTrak.
