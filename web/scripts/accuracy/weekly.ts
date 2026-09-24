@@ -73,14 +73,14 @@ export function evaluateWeek(days: InputDay[], tol = TOLERANCES): WeeklyResult {
       name: "ISS ground distance, weekly max",
       value: issGroundMax,
       limit: tol.issGroundKm,
-      pass: issGroundMax === null || issGroundMax <= tol.issGroundKm,
+      pass: issGroundMax === null ? daysPresent >= tol.minDaysPerWeek : issGroundMax <= tol.issGroundKm,
       detail: issGroundMax === null ? "no ISS data" : `${issGroundMax.toFixed(3)} km`,
     },
     {
       name: "ISS altitude difference, weekly max",
       value: issAltMax,
       limit: tol.issAltKm,
-      pass: issAltMax === null || issAltMax <= tol.issAltKm,
+      pass: issAltMax === null ? daysPresent >= tol.minDaysPerWeek : issAltMax <= tol.issAltKm,
       detail: issAltMax === null ? "no ISS data" : `${issAltMax.toFixed(3)} km`,
     },
     {
