@@ -4,7 +4,7 @@ const EXAMPLES = ["Show me the Fengyun-1C debris cloud", "How much Chinese debri
 
 export function ChatPanel() {
   return (
-    <div aria-label="AI analyst">
+    <div>
       <div className="label flex items-center gap-2"><PixelIcon name="chat" /> ANALYST</div>
       <p className="mt-2 text-sm text-ink-2">An AI analyst that answers from the real catalog and moves the globe is coming soon.</p>
       <ul className="mt-3 flex flex-col gap-2">

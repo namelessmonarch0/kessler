@@ -38,7 +38,7 @@ export function ObjectCard() {
 
   if (selectedId === null) return null;
   return (
-    <div aria-label="Selected object" data-testid="object-card">
+    <div data-testid="object-card">
       <div className="flex items-start justify-between gap-3">
         <h2 className="font-mono text-[18px] text-ink">{obj?.name ?? `NORAD ${selectedId}`}</h2>
         <button type="button" onClick={() => select(null)} className="text-sm text-ink-2 hover:text-ink" aria-label="Close">✕</button>

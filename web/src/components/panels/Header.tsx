@@ -9,7 +9,7 @@ export function Header() {
         <PixelIcon name="sat" size={18} color={GLOBE_COLORS.PAY} /> KESSLER
       </Link>
       <nav className="flex items-center gap-5 text-sm text-ink-2">
-        <Link href="/#explore" className="py-1 hover:text-ink">Explore</Link>
+        <Link href="/" className="py-1 hover:text-ink">Explore</Link>
         <Link href="/about" className="py-1 hover:text-ink">About</Link>
         <a href="https://kudayyurter.dev" className="py-1 hover:text-ink">kudayyurter.dev ↗</a>
       </nav>

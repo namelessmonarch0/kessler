@@ -12,7 +12,7 @@ export function Filters({ meta }: { meta: Meta | null }) {
     `rounded-full border-2 px-3 py-1.5 text-[13px] ${on ? "border-ink text-ink" : "border-line text-ink-2"} bg-[#121212]`;
 
   return (
-    <div aria-label="Filters">
+    <div>
       <p className="label">Object types</p>
       <div className="mt-2 flex flex-wrap gap-2">
         {TYPES.map((t) => (
