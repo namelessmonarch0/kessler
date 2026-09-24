@@ -1,27 +1,14 @@
 import { readFileSync } from "node:fs";
-import { eciToEcf, gstime, propagate, sgp4, twoline2satrec } from "satellite.js";
+import { sgp4, twoline2satrec } from "satellite.js";
 import { describe, expect, it } from "vitest";
-import { ecefToGeodetic, greatCircleKm, sceneToEcef } from "@/lib/geo";
-import { ecefToScene, recordToSatrec } from "@/lib/orbit";
+import { ecefToGeodetic, greatCircleKm } from "@/lib/geo";
 import { decodeSnapshot, gunzip, type OrbitRecord } from "@/lib/snapshot";
+import { sitePosition } from "../../scripts/accuracy/sitePosition";
 
 const fx = (n: string) => readFileSync(new URL(`../fixtures/accuracy/${n}`, import.meta.url));
 type Sample = { timeMs: number; ecefKm: [number, number, number]; latDeg: number; lonDeg: number; altKm: number };
 const golden = JSON.parse(fx("golden.json").toString()) as { objects: { label: string; record: OrbitRecord; samples: Sample[] }[] };
 const vectors = JSON.parse(fx("sgp4-vectors.json").toString()) as { cases: { satnum: string; line1: string; line2: string; samples: { tsinceMin: number; temeKm: [number, number, number] }[] }[] };
-
-/** The site's pipeline, end to end, for one record at one time: returns ECEF km via the scene frame. */
-function sitePosition(rec: OrbitRecord, timeMs: number): [number, number, number] | null {
-  const satrec = recordToSatrec(rec);
-  if (!satrec) return null;
-  const date = new Date(timeMs);
-  const pv = propagate(satrec, date);
-  if (!pv || !pv.position) return null;
-  const ecf = eciToEcf(pv.position, gstime(date));
-  const scene = new Float32Array(3);
-  ecefToScene(ecf.x, ecf.y, ecf.z, scene, 0);
-  return sceneToEcef(scene[0], scene[1], scene[2]);
-}
 
 describe("T2 snapshot decode", () => {
   it("decodes the API-packed snapshot to the exact source elements", async () => {
