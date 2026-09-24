@@ -154,7 +154,11 @@ export function GlobeSection() {
         {webgl && !broken && status === "missing" && <p className="text-sm text-ink-2">Orbit data not available yet.</p>}
         {webgl && !broken && status === "error" && <p className="text-sm text-ink-2">Data unavailable. The Earth is shown without objects.</p>}
       </div>
-      <div className="absolute bottom-4 left-1/2 flex -translate-x-1/2 flex-col items-center gap-2">
+      {/* On phone widths (<640px) the panel sheet docks at the bottom of the screen (see
+          MobileSheet), so these controls sit above its max extent (60dvh + the sheet's own 8px
+          inset + a small gap) instead of at the usual bottom-4, or the collapsed sheet's tab bar
+          would still cover them when it's expanded. */}
+      <div className="absolute bottom-[calc(60dvh+16px)] left-1/2 flex -translate-x-1/2 flex-col items-center gap-2 sm:bottom-4">
         <Readout live={webgl === true && !broken} />
         <div className="flex gap-2">
           {([1, 4320] as const).map((s) => (

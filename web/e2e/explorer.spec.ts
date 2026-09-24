@@ -72,20 +72,18 @@ test("shows note when snapshot is missing", async ({ page }) => {
   await expect(page.getByText("Orbit data not available yet.")).toBeVisible({ timeout: 10_000 });
 });
 
-test("no horizontal overflow at 390px", async ({ page }) => {
-  test.skip(true, "re-enabled in Task 5 (mobile sheet)");
+test("phone: bottom sheet with tabs, no horizontal overflow", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await mockApi(page);
   await page.goto("/");
-  await expect(page.getByTestId("tile-PAY")).toBeVisible();
-  // Measuring right after the first tile is visible is too early: the globe canvas mounts async
-  // (after the client-side WebGL probe) and the chart SVGs start at a default width until their
-  // ResizeObserver fires, so wait for every later panel to finish laying out before measuring.
   await expect(page.locator("canvas")).toBeVisible();
-  await page.getByRole("img", { name: "Objects in orbit per year by type" }).scrollIntoViewIfNeeded();
-  await expect(page.locator("path[data-series]")).toHaveCount(3);
-  await expect(page.getByRole("img", { name: "Objects in orbit by owner and type" })).toBeVisible();
-  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  const sheet = page.getByTestId("mobile-sheet");
+  await expect(sheet).toBeVisible();
+  await expect(page.getByTestId("panel-dock")).toHaveCount(0);
+  await sheet.getByRole("tab", { name: "History" }).click();
+  await expect(page.locator("path[data-series]")).toHaveCount(3, { timeout: 10_000 });
+  await sheet.getByRole("tab", { name: "Overview" }).click();
+  await expect(page.getByTestId("tile-PAY")).toContainText("17,750");
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(overflow).toBeLessThanOrEqual(0);
 });

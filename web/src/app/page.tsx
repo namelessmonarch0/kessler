@@ -5,7 +5,9 @@ import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { PANELS, type PanelId } from "@/lib/panels";
 import { regimesFor, useExplorer } from "@/lib/store";
+import { useIsMobile } from "@/lib/useIsMobile";
 import type { BreakdownResponse, Meta, TimeseriesResponse } from "@/lib/types";
+import { MobileSheet } from "@/components/layout/MobileSheet";
 import { Panel } from "@/components/layout/Panel";
 import { PanelDock } from "@/components/layout/PanelDock";
 import { PANEL_CONTENT, type PanelCtx } from "@/components/panels/panelContent";
@@ -31,6 +33,7 @@ export default function Explorer() {
   const types = useExplorer((s) => s.types);
   const orbits = useExplorer((s) => s.orbits);
   const hydratePanels = useExplorer((s) => s.hydratePanels);
+  const isMobile = useIsMobile();
 
   useEffect(() => hydratePanels(), [hydratePanels]);
 
@@ -62,17 +65,23 @@ export default function Explorer() {
   return (
     <main className="h-dvh overflow-hidden">
       <GlobeSection />
-      <div className="pointer-events-none fixed inset-x-0 top-3 z-20 flex justify-center px-[calc(theme(spacing.4)+var(--col))]" style={{ ["--col" as string]: "clamp(320px, 28vw, 380px)" }}>
-        <PanelDock />
-      </div>
-      <div className="pointer-events-none fixed bottom-4 left-4 top-14 z-10 flex w-[clamp(320px,28vw,380px)] flex-col justify-between gap-3 overflow-y-auto">
-        <div className="flex flex-col gap-3">{panel("overview")}{panel("filters")}</div>
-        {panel("history")}
-      </div>
-      <div className="pointer-events-none fixed bottom-4 right-4 top-14 z-10 flex w-[clamp(320px,26vw,360px)] flex-col justify-between gap-3 overflow-y-auto">
-        <div className="flex flex-col gap-3">{panel("search")}{panel("chat")}</div>
-        {panel("owners")}
-      </div>
+      {isMobile ? (
+        <MobileSheet ctx={ctx} />
+      ) : (
+        <>
+          <div className="pointer-events-none fixed inset-x-0 top-3 z-20 flex justify-center px-[calc(theme(spacing.4)+var(--col))]" style={{ ["--col" as string]: "clamp(320px, 28vw, 380px)" }}>
+            <PanelDock />
+          </div>
+          <div className="pointer-events-none fixed bottom-4 left-4 top-14 z-10 flex w-[clamp(320px,28vw,380px)] flex-col justify-between gap-3 overflow-y-auto">
+            <div className="flex flex-col gap-3">{panel("overview")}{panel("filters")}</div>
+            {panel("history")}
+          </div>
+          <div className="pointer-events-none fixed bottom-4 right-4 top-14 z-10 flex w-[clamp(320px,26vw,360px)] flex-col justify-between gap-3 overflow-y-auto">
+            <div className="flex flex-col gap-3">{panel("search")}{panel("chat")}</div>
+            {panel("owners")}
+          </div>
+        </>
+      )}
     </main>
   );
 }
