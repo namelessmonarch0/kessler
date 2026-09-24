@@ -3,6 +3,8 @@ import os
 from aws_cdk import App, Environment
 
 from leo_infra.app_stack import LeoAppStack
+from leo_infra.ci_stack import LeoCiStack
+from leo_infra.registry_stack import LeoRegistryStack
 
 os.environ.setdefault("JSII_SILENCE_WARNING_UNTESTED_NODE_VERSION", "1")
 
@@ -14,6 +16,9 @@ def ctx(name: str) -> str | None:
     value = app.node.try_get_context(name)
     return str(value) if value not in (None, "") else None
 
+
+LeoRegistryStack(app, "LeoRegistry", env=env)
+LeoCiStack(app, "LeoCi", env=env, github_repo=ctx("github_repo") or "namelessmonarch0/leo-debris")
 
 image_tag, alert_email = ctx("image_tag"), ctx("alert_email")
 if image_tag and alert_email:

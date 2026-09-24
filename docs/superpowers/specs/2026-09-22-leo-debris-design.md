@@ -293,11 +293,30 @@ Prototypes remain in `.superpowers/brainstorm/` (globe-sun.html, globe-anime.htm
 - **6-month reminder:** before the AWS free plan ends, upgrade the account to a paid plan
   (expected cost of about $0–2/month) or it will be closed.
 
+### Deploy plan decisions (2026-09-23)
+- One `api/Dockerfile` with two targets (`api` with the Lambda Web Adapter, `jobs` with
+  `awslambdaric`), because the web-adapter extension can't share an image with the plain
+  runtime client.
+- One `leo-jobs` function, driven by `{"job": ...}` events, instead of one Lambda per job.
+- CI builds into the ECR repository `leo-api` (keeps the newest 10 images); Neon migrations
+  run through the `migrate` job rather than a separate deploy step.
+- `LeoRegistryStack` grants `lambda.amazonaws.com` `ecr:BatchGetImage` and
+  `ecr:GetDownloadUrlForLayer` on the repository (scoped to this account), because `LeoApp`
+  imports the repo by name and CDK cannot otherwise attach the Lambda image-pull grant to it.
+- A `leo-jobs-errors` CloudWatch alarm, notifying by email via SNS.
+- `leo-api` reserved concurrency is set by CDK context (`api_reserved_concurrency`, default
+  10), because new AWS accounts are limited to 10 concurrent executions.
+- The Vercel proxy route runs in region `cle1` (Cleveland), next to the API in AWS us-east-2
+  (Ohio).
+- fastembed, `rag_ingest` and LLM parameters move to the AI plan (out of scope for this
+  deploy).
+
 ## 10. Build order
 1. **Data:** schema + migrations (Alembic), ingest jobs, stats, REST API, tests.
 2. **Web:** globe and charts on real API data.
-3. **AI:** RAG corpus + LangGraph agent + SSE chat (works up to the LLM call without a key).
-4. **Deploy:** subdomain, AWS CDK stack (Lambda, schedulers, S3, SSM), CI/CD.
+3. **Deploy:** subdomain, AWS CDK stack (Lambda, schedulers, S3, SSM), CI/CD.
+4. **AI:** RAG corpus + LangGraph agent + SSE chat (works up to the LLM call without a key).
+   (order swapped by the owner, 2026-09-23)
 5. **Polish:** resolve §6.2, anime.js choreography, About page.
 
 ## 11. Roadmap (post-v1)

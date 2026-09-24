@@ -1,0 +1,66 @@
+name: deploy
+on:
+  push:
+    branches: [main]
+    paths: ["api/**", "infra/**", ".github/workflows/deploy.yml"]
+  workflow_dispatch:
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+permissions:
+  id-token: write
+  contents: read
+jobs:
+  api-tests:
+    uses: ./.github/workflows/api.yml
+  infra-tests:
+    uses: ./.github/workflows/infra.yml
+  deploy:
+    needs: [api-tests, infra-tests]
+    if: ${{ vars.AWS_DEPLOY_ROLE_ARN != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      AWS_REGION: us-east-2
+      TAG: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: us-east-2
+      - id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+      - uses: docker/setup-buildx-action@v3
+      - name: Build and push images
+        working-directory: api
+        run: |
+          REPO="${{ steps.ecr.outputs.registry }}/leo-api"
+          for target in api jobs; do
+            docker buildx build --platform linux/amd64 --provenance=false --push \
+              --target "$target" -t "$REPO:$target-$TAG" .
+          done
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - name: cdk deploy LeoApp
+        working-directory: infra
+        run: |
+          uv sync --locked
+          npx -y aws-cdk@2.1143.0 deploy LeoApp --require-approval never \
+            -c image_tag="$TAG" -c alert_email="${{ vars.ALERT_EMAIL }}"
+      - name: Run database migrations
+        run: |
+          aws lambda invoke --function-name leo-jobs --cli-binary-format raw-in-base64-out \
+            --cli-read-timeout 900 --payload '{"job":"migrate"}' out.json > meta.json
+          cat out.json
+          if grep -q FunctionError meta.json; then echo "migration failed"; exit 1; fi
+      - name: Smoke test
+        run: |
+          URL=$(aws cloudformation describe-stacks --stack-name LeoApp \
+            --query "Stacks[0].Outputs[?OutputKey=='ApiFunctionUrl'].OutputValue" --output text)
+          test "$(curl -s -o /dev/null -w '%{http_code}' "${URL}api/health")" = 200
+          test "$(curl -s -o /dev/null -w '%{http_code}' "${URL}api/meta")" = 403
