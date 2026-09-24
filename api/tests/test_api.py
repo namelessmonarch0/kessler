@@ -4,37 +4,8 @@ from fastapi.testclient import TestClient
 from app.api.main import create_app
 from app.config import Settings
 from app.db import Database
-from app.ingest.snapshot import LocalSnapshotStore, snapshot_key
-from app.seeds import load_seeds
-from app.stats.rebuild import rebuild_yearly_stats
-from tests.factories import seed_stats_world
-
-
-@pytest.fixture
-def world(conn):
-    load_seeds(conn)
-    seed_stats_world(conn)
-    rebuild_yearly_stats(conn)
-    return conn
-
-
-@pytest.fixture
-def store(tmp_path):
-    return LocalSnapshotStore(tmp_path)
-
-
-def make_client(migrated, store, **settings):
-    db = Database(migrated)
-    app = create_app(Settings(database_url=migrated, **settings), store=store, database=db)
-    return TestClient(app), db
-
-
-@pytest.fixture
-def client(world, migrated, store):
-    c, db = make_client(migrated, store)
-    with c:
-        yield c
-    db.close()
+from app.ingest.snapshot import snapshot_key
+from tests.conftest import make_client  # noqa: F401  (re-export for this module)
 
 
 def test_health(client):

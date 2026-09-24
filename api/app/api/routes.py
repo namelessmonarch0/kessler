@@ -1,4 +1,5 @@
 import hashlib
+import json
 from datetime import UTC, datetime
 from typing import Literal
 
@@ -11,6 +12,7 @@ from app.ingest.snapshot import SNAPSHOT_GROUPS, snapshot_key
 from app.services import stats
 from app.services.events import list_events
 from app.services.filters import parse_filters, parse_year_range
+from app.services.globe import globe_names
 from app.services.meta import get_meta
 from app.services.objects import get_object, search_objects
 
@@ -140,3 +142,22 @@ def globe_snapshot(request: Request, group: Literal["LEO", "HIGH"] = "LEO") -> R
     if request.headers.get("if-none-match") == etag:
         return Response(status_code=304, headers=headers)
     return Response(content=data, media_type="application/octet-stream", headers=headers)
+
+
+@router.get("/globe/names")
+def globe_names_route(
+    request: Request,
+    group: Literal["LEO", "HIGH"] = "LEO",
+    conn: psycopg.Connection = Depends(get_conn),
+) -> Response:
+    generated = last_success(conn, "ingest_gp")
+    body = json.dumps(
+        {"generated_at": generated.isoformat() if generated else None,
+         "names": globe_names(conn, group)},
+        separators=(",", ":"),
+    ).encode()
+    etag = '"' + hashlib.sha1(body).hexdigest() + '"'
+    headers = {"ETag": etag, "Cache-Control": "public, max-age=300, s-maxage=21600"}
+    if request.headers.get("if-none-match") == etag:
+        return Response(status_code=304, headers=headers)
+    return Response(content=body, media_type="application/json", headers=headers)
