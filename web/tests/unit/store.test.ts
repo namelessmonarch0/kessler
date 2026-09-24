@@ -44,3 +44,20 @@ describe("regimesFor / isVisible", () => {
     expect(isVisible({ type: "PAY", owner: "US" }, "HIGH", { ...s, types: [...s.types] })).toBe(false);
   });
 });
+
+describe("panel visibility in the store", () => {
+  it("starts from the defaults and toggles", () => {
+    const s = useExplorer.getState();
+    expect(s.panels.filters).toBe(false);
+    s.togglePanel("filters");
+    expect(useExplorer.getState().panels.filters).toBe(true);
+    useExplorer.getState().setPanel("history", false);
+    expect(useExplorer.getState().panels.history).toBe(false);
+  });
+
+  it("selecting an object reveals the search panel", () => {
+    useExplorer.getState().setPanel("search", false);
+    useExplorer.getState().select(25544);
+    expect(useExplorer.getState().panels.search).toBe(true);
+  });
+});
