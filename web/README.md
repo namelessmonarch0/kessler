@@ -76,7 +76,8 @@ fails if that step regresses:
 | 4. TEME → Earth-fixed (`gstime`, `eciToEcf`, `ecefToScene`) | `web/src/lib/orbit.ts` | T3, T4 geodetic round-trip |
 | 5. Scene → globe (sphere mesh + equirectangular texture) | `web/src/components/globe/earthTexture.ts` | T6 globe alignment |
 
-All web-side tests (T2–T6) live in `web/tests/unit/accuracy.test.ts`, against reference data
+Web-side tests T2–T5 live in `web/tests/unit/accuracy.test.ts`; T6 (globe alignment) lives in
+`web/tests/unit/globeAlignment.test.ts`. All of them run against reference data
 frozen into `web/tests/fixtures/accuracy/` (see "Regenerating fixtures" below). None of these
 tests touch the network — only the audit script and the scheduled workflows do.
 

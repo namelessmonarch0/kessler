@@ -25,10 +25,18 @@ jobs:
       - run: npm ci
         working-directory: web
       - name: Check out audit-log
+        id: check
         run: |
-          git fetch origin audit-log
-          git worktree add "$RUNNER_TEMP/log" audit-log
+          if git ls-remote --exit-code origin audit-log >/dev/null; then
+            git fetch origin audit-log
+            git worktree add "$RUNNER_TEMP/log" audit-log
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::No daily captures yet — skipping the weekly review"
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
       - name: Evaluate the week
+        if: steps.check.outputs.exists == 'true'
         working-directory: web
         run: |
           gh label create accuracy --color B60205 --description "Position accuracy out of tolerance" --force
@@ -36,6 +44,7 @@ jobs:
           npm run audit:weekly -- --dir "$RUNNER_TEMP/log/audit/daily" --history "$RUNNER_TEMP/log/audit/history.json" \
             --out-md "$RUNNER_TEMP/log/audit/AUDIT.md" --out-plan "$RUNNER_TEMP/plan.json" --open-issues "$OPEN"
       - name: Open or comment on an issue
+        if: steps.check.outputs.exists == 'true'
         run: |
           ACTION=$(jq -r .action "$RUNNER_TEMP/plan.json")
           if [ "$ACTION" = open ]; then
@@ -44,6 +53,7 @@ jobs:
             gh issue comment "$(jq -r .issue "$RUNNER_TEMP/plan.json")" --body "$(jq -r .body "$RUNNER_TEMP/plan.json")"
           fi
       - name: Commit the report
+        if: steps.check.outputs.exists == 'true'
         run: |
           cd "$RUNNER_TEMP/log"
           git config user.name "kessler-audit[bot]"
