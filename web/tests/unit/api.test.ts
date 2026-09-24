@@ -47,4 +47,16 @@ describe("api", () => {
     await api.search("50%_ off");
     expect((fn.mock.calls[0] as unknown[])[0]).toBe("/api/objects/search?q=50%25_+off");
   });
+
+  it("requests the names endpoint and returns body.names", async () => {
+    const fn = stubFetch(Response.json({ generated_at: "2026-09-23T10:00:00Z", names: { "25544": "ISS (ZARYA)" } }));
+    const result = await api.names("LEO");
+    expect((fn.mock.calls[0] as unknown[])[0]).toBe("/api/globe/names?group=LEO");
+    expect(result).toEqual({ "25544": "ISS (ZARYA)" });
+  });
+
+  it("throws ApiRequestError on names endpoint 500", async () => {
+    stubFetch(Response.json({ error: { code: "server_error", message: "internal error" } }, { status: 500 }));
+    await expect(api.names("HIGH")).rejects.toMatchObject({ status: 500, code: "server_error" });
+  });
 });

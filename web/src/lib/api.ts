@@ -68,6 +68,8 @@ export const api = {
   events: () => getJson<BreakupEvent[]>("/events"),
   object: (id: number) => getJson<ObjectDetail>(`/objects/${id}`),
   search: (q: string) => getJson<SearchResult[]>(`/objects/search${buildQuery({ q })}`),
+  names: async (group: "LEO" | "HIGH") =>
+    (await getJson<{ generated_at: string | null; names: Record<string, string> }>(`/globe/names?group=${group}`)).names,
   async snapshot(group: "LEO" | "HIGH"): Promise<Uint8Array | null> {
     const res = await fetch(`/api/globe/snapshot?group=${group}`);
     if (res.status === 404) return null;

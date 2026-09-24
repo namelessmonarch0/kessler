@@ -24,6 +24,11 @@ async function mockApi(page: Page, overrides: Record<string, { status: number; b
         ? route.fulfill({ status: 200, body: fx("snapshot-leo.bin.gz"), contentType: "application/octet-stream" })
         : route.fulfill({ status: 404, body: JSON.stringify({ error: { code: "not_found", message: "none" } }), contentType: "application/json" });
     }
+    if (path === "/globe/names") {
+      return url.searchParams.get("group") === "LEO"
+        ? route.fulfill({ status: 200, body: fx("api/names-leo.json"), contentType: "application/json" })
+        : route.fulfill({ status: 404, body: JSON.stringify({ error: { code: "not_found", message: "none" } }), contentType: "application/json" });
+    }
     const file = map[path];
     return file
       ? route.fulfill({ status: 200, body: fx(file), contentType: "application/json" })
