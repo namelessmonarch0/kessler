@@ -13,7 +13,7 @@ import { ecefToScene } from "@/lib/orbit";
 const topo = JSON.parse(readFileSync(new URL("../../public/geo/land-50m.json", import.meta.url), "utf8")) as Topology;
 const land = feature(topo, topo.objects.land) as unknown as FeatureCollection;
 
-const LAND = { Cairo: [31.24, 30.04], Sahara: [13, 23], Denver: [-104.99, 39.74], Bordeaux: [-0.58, 44.84], "Buenos Aires": [-58.38, -34.6], Beijing: [116.4, 39.9], Sydney: [151.0, -33.8], Chukotka: [175.0, 66.0] };
+const LAND = { Cairo: [31.24, 30.04], Sahara: [13, 23], Denver: [-104.99, 39.74], Bordeaux: [-0.58, 44.84], "Buenos Aires": [-58.38, -34.6], Beijing: [116.4, 39.9], Sydney: [151.0, -33.8], Chukotka: [175.0, 66.0], "South Pole": [0, -89.5], "Antarctic plateau": [90, -87], "Ross Ice Shelf": [-175, -84.8] };
 const OCEAN = { "mid-Pacific": [-150, 0], "South Atlantic": [-15, -30], "North Atlantic": [-40, 45], "Indian Ocean": [80, -20], "Bering Sea": [-178.0, 57.0] };
 
 /** UV tolerance, degrees of great-circle arc: the residual of linear UV interpolation across the 128×96

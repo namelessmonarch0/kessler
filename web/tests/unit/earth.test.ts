@@ -24,6 +24,13 @@ describe("ringSegments", () => {
     expect(segs[0].length).toBe(2);
     expect(segs[1].length).toBe(2);
   });
+  it("closes a ring that circles the south pole through the pole instead of across it", () => {
+    const ring: [number, number][] = [[-180, -70], [-90, -65], [0, -70], [90, -65], [180, -70], [-180, -70]];
+    const segs = ringSegments(ring, 360, 180);
+    // the closed shape must reach the bottom (pole) row so the cap south of the coast is filled
+    const maxY = Math.max(...segs.flat().map(([, y]) => y));
+    expect(maxY).toBe(180);
+  });
   it("keeps a normal ring as one segment", () => {
     expect(ringSegments([[0, 0], [10, 0], [10, 10]], 360, 180).length).toBe(1);
   });
