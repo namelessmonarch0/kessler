@@ -31,4 +31,18 @@ Every run is recorded in `ingest_runs`. A failed run never replaces good data.
 
 `uv run pytest` (needs Docker for testcontainers, or set `TEST_DATABASE_URL` to an empty database).
 
+## Container images (AWS Lambda)
+
+`Dockerfile` builds two images from shared layers:
+
+| Target | Lambda | Runs |
+|---|---|---|
+| `api` | `leo-api` (Function URL, streaming) | uvicorn behind the AWS Lambda Web Adapter |
+| `jobs` | `leo-jobs` (scheduled) | `app.lambda_jobs.handler`, event `{"job": "migrate" \| "ingest-satcat" \| "ingest-gp" \| "rebuild-stats" \| "all"}` |
+
+Always build with `--platform linux/amd64 --provenance=false`, because Lambda rejects manifests that carry attestations.
+`./scripts/smoke-images.sh` builds both and checks them against the local compose database.
+
+In Lambda, `SSM_PREFIX=/leo/` loads secrets from SSM Parameter Store at cold start, and `SNAPSHOT_BUCKET` switches globe snapshots to S3.
+
 Data: USSPACECOM via Space-Track.org; CelesTrak.
