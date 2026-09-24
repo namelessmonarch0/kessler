@@ -52,7 +52,6 @@ export function GlobeScene({
   const size = useThree((s) => s.size);
   const sun = useRef<THREE.DirectionalLight>(null);
   const controls = useRef<OrbitControlsImpl>(null);
-  const timeScale = useExplorer((s) => s.timeScale);
   const selectedId = useExplorer((s) => s.selectedId);
   const sheetTop = useExplorer((s) => s.mobileSheetTop);
   const topBarBottom = useExplorer((s) => s.topBarBottom);
@@ -65,8 +64,6 @@ export function GlobeScene({
   const labelSources = useRef<(LabelSource | undefined)[]>([]);
   // The initial camera distance is set exactly once; afterwards zoom belongs to the user.
   const positioned = useRef(false);
-
-  useEffect(() => simClock.setScale(timeScale), [timeScale]);
 
   useEffect(() => {
     if (positioned.current) return;
@@ -119,7 +116,7 @@ export function GlobeScene({
   const earthCyElapsed = useRef(Infinity);
   const earthCyOrigin = useRef(new THREE.Vector3());
   useFrame((_, dt) => {
-    simClock.tick(Math.min(dt, 0.1) * 1000);
+    simClock.tick();
     const [x, y, z] = sunDirectionScene(new Date(simClock.now()));
     sun.current?.position.set(x * 10, y * 10, z * 10);
 

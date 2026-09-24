@@ -73,8 +73,6 @@ export function GlobeSection() {
   const topBarRef = useRef<HTMLDivElement>(null);
   const setTopBarBottom = useExplorer((s) => s.setTopBarBottom);
   const wantHigh = useExplorer((s) => s.orbits.high);
-  const timeScale = useExplorer((s) => s.timeScale);
-  const setTimeScale = useExplorer((s) => s.setTimeScale);
   // True once WebGL is unavailable for any reason: no support at all, the R3F render tree threw
   // (caught by GlobeErrorBoundary), or the GPU context was lost after the canvas mounted. All
   // three show the same fallback message in place of the globe.
@@ -176,7 +174,7 @@ export function GlobeSection() {
         {webgl && !broken && status === "error" && <p className="text-sm text-ink-2">Data unavailable. The Earth is shown without objects.</p>}
       </div>
       {/* Labels go BELOW the control bar in stacking order (DOM order + the bar's z-10), so a label
-          can never cover the Live/Fast buttons or the readout. */}
+          can never cover the LIVE badge or the readout. */}
       <div ref={labelsRef} data-testid="globe-labels" aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden" />
       {/* Bottom-sheet layout (<1024 wide or <560 tall): the sheet docks at the bottom, so these
           controls sit in a top bar (a single row on short screens). Desktop: bottom-centre, bounded
@@ -188,22 +186,14 @@ export function GlobeSection() {
         className="pointer-events-none absolute inset-x-2 top-3 z-10 flex flex-col items-center gap-2 short:flex-row short:justify-center short:gap-3 wide:bottom-4 wide:left-[calc(16px+var(--col-l)+8px)] wide:right-[calc(16px+var(--col-r)+8px)] wide:top-auto"
       >
         <Readout live={webgl === true && !broken} />
-        <div className="flex gap-2">
-          {([1, 4320] as const).map((s) => (
-            <button
-              key={s}
-              type="button"
-              onClick={() => {
-                if (s === 1) simClock.reset();
-                setTimeScale(s);
-              }}
-              aria-pressed={timeScale === s}
-              className={`pointer-events-auto rounded-full border-2 px-3 py-2 text-sm ${timeScale === s ? "border-ink text-ink" : "border-line text-ink-2"} bg-[#121212]`}
-            >
-              {s === 1 ? "Live" : "Fast · 1 day / 20 s"}
-            </button>
-          ))}
-        </div>
+        {/* Non-interactive: real time is the only speed there is now (no Fast mode), so this is a
+            status badge, not a control — no role=button, not focusable, no click handler. */}
+        <p
+          data-testid="live-badge"
+          className="label pointer-events-auto select-none rounded-full border-2 border-line !text-ink bg-[#121212] px-3 py-2"
+        >
+          <span aria-hidden="true" style={{ color: "#7fd06b" }}>●</span>{" "}LIVE
+        </p>
       </div>
     </section>
   );

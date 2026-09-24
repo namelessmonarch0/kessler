@@ -7,7 +7,6 @@ type Filters = { types: ObjectType[]; owners: string[]; orbits: Orbits };
 
 interface ExplorerState extends Filters {
   selectedId: number | null;
-  timeScale: 1 | 4320;
   panels: Record<PanelId, boolean>;
   // Whether the phone bottom sheet (see MobileSheet.tsx) is expanded. Lives here, not as local
   // component state, so GlobeScene (inside the <Canvas> tree, not a descendant of MobileSheet)
@@ -17,14 +16,13 @@ interface ExplorerState extends Filters {
   // MobileSheet via a ResizeObserver — null before the first measurement. GlobeScene uses this
   // (not a CSS-derived guess) to know exactly how much of the screen the sheet covers.
   mobileSheetTop: number | null;
-  // Bottom edge (viewport px) of the globe's top bar (readout + Live/Fast) in the bottom-sheet
+  // Bottom edge (viewport px) of the globe's top bar (readout + LIVE badge) in the bottom-sheet
   // layout, measured by GlobeSection — with mobileSheetTop it bounds the visible globe area.
   topBarBottom: number | null;
   toggleType: (t: ObjectType) => void;
   setOwners: (codes: string[]) => void;
   toggleOrbit: (k: keyof Orbits) => void;
   select: (id: number | null) => void;
-  setTimeScale: (s: 1 | 4320) => void;
   setPanel: (id: PanelId, shown: boolean) => void;
   togglePanel: (id: PanelId) => void;
   hydratePanels: () => void;
@@ -34,12 +32,11 @@ interface ExplorerState extends Filters {
   reset: () => void;
 }
 
-const initial = (): Filters & Pick<ExplorerState, "selectedId" | "timeScale" | "panels" | "mobileSheetOpen" | "mobileSheetTop" | "topBarBottom"> => ({
+const initial = (): Filters & Pick<ExplorerState, "selectedId" | "panels" | "mobileSheetOpen" | "mobileSheetTop" | "topBarBottom"> => ({
   types: [...OBJECT_TYPES],
   owners: [],
   orbits: { leo: true, high: false },
   selectedId: null,
-  timeScale: 1,
   panels: { ...DEFAULT_VISIBILITY },
   mobileSheetOpen: true,
   mobileSheetTop: null,
@@ -61,7 +58,6 @@ export const useExplorer = create<ExplorerState>((set) => ({
       return next.leo || next.high ? { orbits: next } : s;
     }),
   select: (id) => set((s) => (id === null ? { selectedId: null } : { selectedId: id, panels: { ...s.panels, search: true } })),
-  setTimeScale: (timeScale) => set({ timeScale }),
   setPanel: (id, shown) =>
     set((s) => {
       const panels = { ...s.panels, [id]: shown };

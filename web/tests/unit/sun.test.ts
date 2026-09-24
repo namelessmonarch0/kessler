@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { subsolarPoint, sunDirectionScene } from "@/lib/sun";
-import { simClock } from "@/lib/clock";
 
 describe("subsolarPoint", () => {
   it("is near the equator and prime meridian at the September 2026 equinox noon", () => {
@@ -18,14 +17,5 @@ describe("sunDirectionScene", () => {
     const [x, y, z] = sunDirectionScene(new Date("2026-09-22T12:00:00Z"));
     expect(Math.hypot(x, y, z)).toBeCloseTo(1, 6);
     expect(x).toBeGreaterThan(0.99);
-  });
-});
-
-describe("simClock", () => {
-  it("advances by real time times the scale", () => {
-    simClock.reset(Date.UTC(2026, 0, 1));
-    simClock.setScale(10);
-    simClock.tick(1000);
-    expect(simClock.now()).toBe(Date.UTC(2026, 0, 1) + 10_000);
   });
 });

@@ -31,7 +31,7 @@ function visibleRect(sheetLayout: boolean, width: number, height: number): Visib
  * Two cadences:
  * - every 250 ms: decide WHICH objects get labels (≤ 12; the expensive pass over every record);
  * - every frame: re-project just those ≤ 12 and move their buttons, so labels stay attached to
- *   their objects while the camera or (Fast mode) the objects move.
+ *   their objects while the camera or the objects move.
  * Buttons are reused per object id — only created/removed when the chosen set changes — so a
  * click that lands between two selection passes still hits the same element.
  */
@@ -132,8 +132,6 @@ export function LabelDriver({
 
   // Moves the chosen labels to where their objects are THIS frame; hides one whose object has
   // slipped behind the Earth or out of the visible rect until the next selection pass decides.
-  // (In Fast mode, zoomed in, a LEO object can cross the whole view in a few frames — its label
-  // follows it and then hides rather than lingering somewhere it no longer belongs.)
   const reproject = () => {
     const cam: [number, number, number] = [camera.position.x, camera.position.y, camera.position.z];
     const t = simClock.now();

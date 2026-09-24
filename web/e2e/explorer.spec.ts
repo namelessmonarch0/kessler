@@ -114,17 +114,17 @@ test("phone: bottom sheet with tabs, no horizontal overflow", async ({ page }) =
   const sheet = page.getByTestId("mobile-sheet");
   await expect(sheet).toBeVisible();
   await expect(page.getByTestId("panel-dock")).toHaveCount(0);
-  // The Live/Fast controls moved to a top bar on phone (see GlobeSection) so the open sheet,
-  // which covers roughly the lower half of the screen, never covers them.
-  const live = page.getByRole("button", { name: "Live" });
-  await expect(live).toBeVisible();
-  const liveBox = await live.boundingBox();
+  // The LIVE badge moved to a top bar on phone (see GlobeSection) so the open sheet, which
+  // covers roughly the lower half of the screen, never covers it.
+  const badge = page.getByTestId("live-badge");
+  await expect(badge).toBeVisible();
+  const badgeBox = await badge.boundingBox();
   const sheetBox = await sheet.boundingBox();
-  if (!liveBox || !sheetBox) throw new Error("missing bounding box for Live button or sheet");
-  const overlap = liveBox.x < sheetBox.x + sheetBox.width && sheetBox.x < liveBox.x + liveBox.width
-    && liveBox.y < sheetBox.y + sheetBox.height && sheetBox.y < liveBox.y + liveBox.height;
-  expect(overlap, "Live button must not overlap the sheet").toBe(false);
-  expect(liveBox.y + liveBox.height, "Live button should sit in the top 20% of the screen").toBeLessThanOrEqual(844 * 0.2);
+  if (!badgeBox || !sheetBox) throw new Error("missing bounding box for the LIVE badge or sheet");
+  const overlap = badgeBox.x < sheetBox.x + sheetBox.width && sheetBox.x < badgeBox.x + badgeBox.width
+    && badgeBox.y < sheetBox.y + sheetBox.height && sheetBox.y < badgeBox.y + badgeBox.height;
+  expect(overlap, "LIVE badge must not overlap the sheet").toBe(false);
+  expect(badgeBox.y + badgeBox.height, "LIVE badge should sit in the top 20% of the screen").toBeLessThanOrEqual(844 * 0.2);
   // The date/sun readout lives in the same top bar, on one line, without overlapping the Earth.
   const readout = page.getByTestId("globe-readout");
   await expect(readout).toBeVisible();
@@ -270,10 +270,10 @@ test("panels do not overlap at 1280x720", async ({ page }) => {
     }
 });
 
-// Every viewport: nothing overlaps (panels, dock, sheet, control bar) and the Live button is
-// really clickable — the element at its centre is the button itself, not something covering it.
+// Every viewport: nothing overlaps (panels, dock, sheet, control bar) and the LIVE badge is
+// really visible — the element at its centre is the badge itself, not something covering it.
 for (const [w, h] of [[640, 900], [768, 1024], [844, 390], [1024, 768], [1280, 720]] as const) {
-  test(`${w}x${h}: no overlap and Live button clickable`, async ({ page }) => {
+  test(`${w}x${h}: no overlap and LIVE badge visible`, async ({ page }) => {
     await page.setViewportSize({ width: w, height: h });
     await mockApi(page);
     await page.goto("/");
@@ -306,10 +306,9 @@ for (const [w, h] of [[640, 900], [768, 1024], [844, 390], [1024, 768], [1280, 7
       expect(b.top).toBeGreaterThanOrEqual(0);
       expect(b.bottom).toBeLessThanOrEqual(h);
     }
-    const live = page.getByRole("button", { name: "Live" });
-    const lb = (await live.boundingBox())!;
-    const hit = await page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.textContent ?? null, [lb.x + lb.width / 2, lb.y + lb.height / 2]);
-    expect(hit, "element at the Live button's centre").toBe("Live");
-    await live.click({ trial: true });
+    const badge = page.getByTestId("live-badge");
+    const bb = (await badge.boundingBox())!;
+    const hit = await page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.textContent ?? null, [bb.x + bb.width / 2, bb.y + bb.height / 2]);
+    expect(hit, "element at the LIVE badge's centre").toBe("● LIVE");
   });
 }

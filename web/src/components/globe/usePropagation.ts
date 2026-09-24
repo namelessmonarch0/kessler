@@ -27,7 +27,7 @@ export function usePropagation(records: OrbitRecord[] | null, active = true): Pr
     const request = () => {
       if (waiting) return;
       waiting = true;
-      const msg: WorkerIn = { kind: "tick", timeMs: simClock.now() + TICK_MS * simClock.scale, id: ++id };
+      const msg: WorkerIn = { kind: "tick", timeMs: simClock.now() + TICK_MS, id: ++id };
       worker.postMessage(msg);
     };
     requestRef.current = request;

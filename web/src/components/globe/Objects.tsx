@@ -150,7 +150,7 @@ export function Objects({
       buckets[kind].forEach((recordIndex, instance) => {
         const drawable = visible[recordIndex] && interpolate(frames.current, now, recordIndex, pos);
         if (drawable) {
-          if (interpolate(frames.current, now + 1000 * simClock.scale, recordIndex, ahead)) vel.subVectors(ahead, pos);
+          if (interpolate(frames.current, now + 1000, recordIndex, ahead)) vel.subVectors(ahead, pos);
           else vel.set(1, 0, 0);
         }
         const selectedBoost = records[recordIndex].noradId === selectedId ? 2.2 : 1;

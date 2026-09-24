@@ -9,7 +9,6 @@ describe("explorer store", () => {
     expect(s.types).toEqual(["PAY", "R/B", "DEB", "UNK"]);
     expect(s.owners).toEqual([]);
     expect(s.orbits).toEqual({ leo: true, high: false });
-    expect(s.timeScale).toBe(1);
   });
 
   it("toggles types but never allows zero types", () => {
