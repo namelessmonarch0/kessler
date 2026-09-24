@@ -47,7 +47,7 @@ function Readout({ live }: { live: boolean }) {
     return () => window.clearInterval(id);
   }, [live]);
   return (
-    <p data-testid="globe-readout" className="label text-center [text-shadow:0_1px_3px_rgba(0,0,0,0.85)]" aria-live="off">
+    <p data-testid="globe-readout" className="label min-h-[1lh] text-balance text-center !text-ink [text-shadow:0_0_2px_#000,0_0_3px_#000,0_0_6px_#000,0_1px_12px_rgba(0,0,0,0.9)]" aria-live="off">
       <span className="hidden sm:inline">{full}</span>
       <span className="sm:hidden">{short}</span>
     </p>
@@ -70,6 +70,8 @@ export function GlobeSection() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sectionRef = useRef<HTMLElement>(null);
   const labelsRef = useRef<HTMLDivElement>(null);
+  const topBarRef = useRef<HTMLDivElement>(null);
+  const setTopBarBottom = useExplorer((s) => s.setTopBarBottom);
   const wantHigh = useExplorer((s) => s.orbits.high);
   const timeScale = useExplorer((s) => s.timeScale);
   const setTimeScale = useExplorer((s) => s.setTimeScale);
@@ -134,6 +136,22 @@ export function GlobeSection() {
     };
   }, []);
 
+  // Publishes the control bar's bottom edge. In the bottom-sheet layout the bar sits at the top of
+  // the screen and, with the sheet's top, bounds the visible globe (camera framing + labels).
+  useEffect(() => {
+    const el = topBarRef.current;
+    if (!el) return;
+    const update = () => setTopBarBottom(el.getBoundingClientRect().bottom);
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    window.addEventListener("resize", update);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", update);
+      setTopBarBottom(null);
+    };
+  }, [setTopBarBottom]);
+
   return (
     <section ref={sectionRef} className="fixed inset-0" aria-label="Live globe of tracked objects">
       {webgl && !broken && (
@@ -157,11 +175,18 @@ export function GlobeSection() {
         {webgl && !broken && status === "missing" && <p className="text-sm text-ink-2">Orbit data not available yet.</p>}
         {webgl && !broken && status === "error" && <p className="text-sm text-ink-2">Data unavailable. The Earth is shown without objects.</p>}
       </div>
-      {/* On phone widths (<640px) the panel sheet docks at the bottom of the screen (see
-          MobileSheet) and can cover roughly the lower half of it, so these controls move to a top
-          bar there instead of sitting at the usual bottom-4 (which the sheet would cover, or come
-          close to). At >=640px (tablet/desktop, no sheet) this is unchanged from before Task 5. */}
-      <div data-testid="globe-topbar" className="absolute left-1/2 top-3 flex -translate-x-1/2 flex-col items-center gap-2 sm:top-auto sm:bottom-4">
+      {/* Labels go BELOW the control bar in stacking order (DOM order + the bar's z-10), so a label
+          can never cover the Live/Fast buttons or the readout. */}
+      <div ref={labelsRef} data-testid="globe-labels" aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden" />
+      {/* Bottom-sheet layout (<1024 wide or <560 tall): the sheet docks at the bottom, so these
+          controls sit in a top bar (a single row on short screens). Desktop: bottom-centre, bounded
+          to the gap between the two panel columns so it can never run under them (the readout
+          wraps instead). */}
+      <div
+        ref={topBarRef}
+        data-testid="globe-topbar"
+        className="pointer-events-none absolute inset-x-2 top-3 z-10 flex flex-col items-center gap-2 short:flex-row short:justify-center short:gap-3 wide:bottom-4 wide:left-[calc(16px+var(--col-l)+8px)] wide:right-[calc(16px+var(--col-r)+8px)] wide:top-auto"
+      >
         <Readout live={webgl === true && !broken} />
         <div className="flex gap-2">
           {([1, 4320] as const).map((s) => (
@@ -173,14 +198,13 @@ export function GlobeSection() {
                 setTimeScale(s);
               }}
               aria-pressed={timeScale === s}
-              className={`rounded-full border-2 px-3 py-2 text-sm ${timeScale === s ? "border-ink text-ink" : "border-line text-ink-2"} bg-[#121212]`}
+              className={`pointer-events-auto rounded-full border-2 px-3 py-2 text-sm ${timeScale === s ? "border-ink text-ink" : "border-line text-ink-2"} bg-[#121212]`}
             >
               {s === 1 ? "Live" : "Fast · 1 day / 20 s"}
             </button>
           ))}
         </div>
       </div>
-      <div ref={labelsRef} data-testid="globe-labels" aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden" />
     </section>
   );
 }

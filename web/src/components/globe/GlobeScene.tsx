@@ -5,10 +5,11 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { useCallback, useEffect, useRef } from "react";
 import * as THREE from "three";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
-import { coveredHeightFromSheetTop, phoneInitialDistance, phoneViewOffset } from "@/lib/camera";
+import { earthRadiusPx, initialDistance, sheetInitialDistance, sheetViewOffset } from "@/lib/camera";
 import { simClock } from "@/lib/clock";
 import type { OrbitRecord } from "@/lib/snapshot";
 import { useExplorer } from "@/lib/store";
+import { useIsMobile } from "@/lib/useIsMobile";
 import { sunDirectionScene } from "@/lib/sun";
 import { Earth } from "@/components/globe/Earth";
 import { findPosition, flyTo, type Locator } from "@/components/globe/flyTo";
@@ -39,9 +40,9 @@ export function GlobeScene({
   active?: boolean;
   /** DOM overlay for object labels — filled by LabelDriver below. */
   labelsRef?: React.RefObject<HTMLDivElement | null>;
-  /** GlobeSection's outer <section>. Written to (not read) here — a throttled `data-earth-cy`
-   * attribute exposing the Earth's current projected screen Y, in CSS px, so tests can verify the
-   * globe is actually framed where the phone layout intends it (see the "phone:" e2e test). */
+  /** GlobeSection's outer <section>. Written to (not read) here, outside production only —
+   * throttled `data-earth-cy` / `data-earth-top` attributes exposing the Earth's projected centre
+   * and top edge, in CSS px, so e2e tests can verify the sheet-layout framing. */
   sectionRef?: React.RefObject<HTMLElement | null>;
 }) {
   if (process.env.NODE_ENV !== "production" && typeof window !== "undefined" && window.__LEO_FORCE_GLOBE_ERROR__) {
@@ -53,52 +54,39 @@ export function GlobeScene({
   const controls = useRef<OrbitControlsImpl>(null);
   const timeScale = useExplorer((s) => s.timeScale);
   const selectedId = useExplorer((s) => s.selectedId);
-  const mobileSheetOpen = useExplorer((s) => s.mobileSheetOpen);
-  const mobileSheetTop = useExplorer((s) => s.mobileSheetTop);
+  const sheetTop = useExplorer((s) => s.mobileSheetTop);
+  const topBarBottom = useExplorer((s) => s.topBarBottom);
+  const sheetLayout = useIsMobile();
   // Sparse: index 0 = LEO, 1 = HIGH. A group whose snapshot hasn't loaded (or errored) yet
   // leaves a hole here rather than a function — findPosition skips holes instead of calling them.
   const locators = useRef<(Locator | undefined)[]>([]);
   // Sparse by group index (0 = LEO, 1 = HIGH), same convention as `locators` above — fed by
   // Objects' onLabelSource and read every tick by LabelDriver.
   const labelSources = useRef<(LabelSource | undefined)[]>([]);
-  // Guards the initial camera-position effect below so it only ever runs once, even though it now
-  // has to wait for a real dependency (the sheet's measured top) rather than firing unconditionally
-  // at mount.
+  // The initial camera distance is set exactly once; afterwards zoom belongs to the user.
   const positioned = useRef(false);
 
   useEffect(() => simClock.setScale(timeScale), [timeScale]);
 
-  // How much of the bottom of the screen the phone sheet covers right now — 0 on desktop/tablet,
-  // when the sheet is collapsed, or before MobileSheet's ResizeObserver has measured it once yet.
-  const isPhone = size.width < 640;
-  const covered = isPhone && mobileSheetOpen ? coveredHeightFromSheetTop(size.height, mobileSheetTop) : 0;
-
   useEffect(() => {
-    // On phone, with the sheet open, wait for its real measured top (see coveredHeightFromSheetTop
-    // in camera.ts — the sheet's rendered height is content-driven, not a fixed fraction of the
-    // viewport, so there's no safe guess to size against before that first measurement arrives).
-    // Desktop/tablet, or the sheet already closed, need no measurement and proceed immediately.
-    if (isPhone && mobileSheetOpen && mobileSheetTop === null) return;
     if (positioned.current) return;
+    // Sheet layout: size from a fixed worst case (tallest sheet the CSS allows) — needs only the
+    // top bar's height, never the sheet's content-dependent measurement.
+    if (sheetLayout && topBarBottom === null) return;
     positioned.current = true;
-    const dir = new THREE.Vector3(0.6, 0.9, 3.6).normalize();
-    camera.position.copy(dir.multiplyScalar(phoneInitialDistance(size.width, size.height, covered)));
+    const d = sheetLayout ? sheetInitialDistance(size.width, size.height, topBarBottom!) : initialDistance(size.width / Math.max(size.height, 1));
+    camera.position.copy(new THREE.Vector3(0.6, 0.9, 3.6).normalize().multiplyScalar(d));
     camera.lookAt(0, 0, 0);
-    // Runs once (guarded above): later resizes/sheet changes keep whatever zoom the user chose,
-    // and are instead handled by the setViewOffset effect below (a shift, not a zoom change).
-  }, [camera, size.width, size.height, isPhone, mobileSheetOpen, mobileSheetTop, covered]);
+  }, [camera, size.width, size.height, sheetLayout, topBarBottom]);
 
-  // Re-centre the globe's projection above the sheet (open) or on the full screen (closed) as the
-  // phone sheet is toggled, its content changes size, or the viewport resizes. Desktop/tablet
-  // (>=640px) always clears any offset — this never applies there. Doesn't touch
-  // camera.position/zoom (OrbitControls owns that after mount) or fight the select-driven flyTo
-  // tween below, which also only moves position — setViewOffset is a separate, compositable
-  // adjustment to the projection matrix.
+  // Sheet layout: shift (never scale) the projection so the Earth sits midway between the top bar
+  // and the sheet's current top, following tab switches, collapse and resizes. Desktop clears it.
+  // Only touches the projection matrix — OrbitControls and flyTo own camera.position.
   useEffect(() => {
-    const offset = phoneViewOffset(size.width, size.height, covered);
+    const offset = sheetLayout && topBarBottom !== null && sheetTop !== null ? sheetViewOffset(size.width, size.height, topBarBottom, sheetTop) : null;
     if (offset) camera.setViewOffset(offset.fullWidth, offset.fullHeight, offset.offsetX, offset.offsetY, offset.viewWidth, offset.viewHeight);
     else camera.clearViewOffset();
-  }, [camera, size.width, size.height, covered]);
+  }, [camera, size.width, size.height, sheetLayout, topBarBottom, sheetTop]);
 
   useEffect(() => {
     if (selectedId === null) return;
@@ -135,14 +123,17 @@ export function GlobeScene({
     const [x, y, z] = sunDirectionScene(new Date(simClock.now()));
     sun.current?.position.set(x * 10, y * 10, z * 10);
 
-    // Throttled (matches the labels' 250ms cadence — see global-constraints.md) so tests can read
-    // where the Earth is actually rendered, without recomputing on every single frame.
-    earthCyElapsed.current += dt;
-    if (sectionRef?.current && earthCyElapsed.current >= 0.25) {
-      earthCyElapsed.current = 0;
-      earthCyOrigin.current.set(0, 0, 0).project(camera);
-      const cy = ((1 - earthCyOrigin.current.y) / 2) * size.height;
-      sectionRef.current.setAttribute("data-earth-cy", cy.toFixed(1));
+    // Test-only (never in production): where the Earth is rendered, throttled to 250 ms.
+    if (process.env.NODE_ENV !== "production") {
+      earthCyElapsed.current += dt;
+      if (sectionRef?.current && earthCyElapsed.current >= 0.25) {
+        earthCyElapsed.current = 0;
+        earthCyOrigin.current.set(0, 0, 0).project(camera);
+        const cy = ((1 - earthCyOrigin.current.y) / 2) * size.height;
+        const r = earthRadiusPx(camera.position.length(), size.height, camera.fov);
+        sectionRef.current.setAttribute("data-earth-cy", cy.toFixed(1));
+        sectionRef.current.setAttribute("data-earth-top", (cy - r).toFixed(1));
+      }
     }
   });
 
@@ -154,7 +145,7 @@ export function GlobeScene({
       {leo && <Objects records={leo} group="LEO" onReady={onReadyLeo} active={active} onLabelSource={onLeoLabels} />}
       {high && <Objects records={high} group="HIGH" onReady={onReadyHigh} active={active} onLabelSource={onHighLabels} />}
       <OrbitControls ref={controls} enableDamping enablePan={false} minDistance={1.12} maxDistance={12} zoomSpeed={0.8} />
-      {labelsRef && <LabelDriver sources={labelSources} container={labelsRef} />}
+      {labelsRef && <LabelDriver sources={labelSources} container={labelsRef} sheetLayout={sheetLayout} />}
     </>
   );
 }

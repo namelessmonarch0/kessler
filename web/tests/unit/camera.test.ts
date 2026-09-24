@@ -1,10 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { coveredHeightFromSheetTop, initialDistance, phoneInitialDistance, phoneViewOffset } from "@/lib/camera";
+import { earthRadiusPx, initialDistance, sheetInitialDistance, sheetMaxFraction, sheetViewOffset, sheetWorstCaseHeight } from "@/lib/camera";
 
 // Replays three.js PerspectiveCamera.updateProjectionMatrix's view-offset math (near=1, so the
-// near-plane bounds double as tangent values). Shared by the phoneViewOffset and phone-framing
-// integration tests below.
-function projectedFrustum(width: number, height: number, fovDeg: number, offset: ReturnType<typeof phoneViewOffset>) {
+// near-plane bounds double as tangent values).
+function projectedFrustum(width: number, height: number, fovDeg: number, offset: ReturnType<typeof sheetViewOffset>) {
   const fov = (fovDeg * Math.PI) / 180;
   const aspect = width / height;
   let top = Math.tan(fov / 2);
@@ -31,93 +30,81 @@ describe("initialDistance", () => {
   });
 });
 
-describe("coveredHeightFromSheetTop", () => {
-  it("is 0 before a measurement arrives", () => {
-    expect(coveredHeightFromSheetTop(844, null)).toBe(0);
-  });
-  it("is the gap between the screen height and the sheet's measured top", () => {
-    // Sheet's real top at row 505 (e.g. a short Overview tab, not the 60dvh max) -> covers 339px.
-    expect(coveredHeightFromSheetTop(844, 505)).toBe(339);
-  });
-  it("clamps to 0 rather than going negative (sheet top below the viewport)", () => {
-    expect(coveredHeightFromSheetTop(844, 900)).toBe(0);
-  });
-});
-
-describe("phoneViewOffset", () => {
-  it("returns null when there is nothing covered (sheet closed / desktop)", () => {
-    expect(phoneViewOffset(390, 844, 0)).toBeNull();
-    expect(phoneViewOffset(390, 844, -1)).toBeNull();
-  });
-
+describe("sheetViewOffset", () => {
   it("returns null for a degenerate (zero-size) canvas", () => {
-    expect(phoneViewOffset(0, 844, 100)).toBeNull();
-    expect(phoneViewOffset(390, 0, 100)).toBeNull();
+    expect(sheetViewOffset(0, 844, 90, 500)).toBeNull();
+    expect(sheetViewOffset(390, 0, 90, 500)).toBeNull();
   });
 
-  // Checks the two properties phoneViewOffset is built to guarantee: the on-axis object (the
-  // Earth, at the world origin) ends up at the vertical centre of the *uncovered* area, and the
-  // frustum's aspect ratio (width/height) is unchanged by the offset, i.e. the globe isn't
-  // stretched.
+  it("is a pure shift: full size equals view size, no horizontal offset", () => {
+    const o = sheetViewOffset(390, 844, 90, 500)!;
+    expect(o).toEqual({ fullWidth: 390, fullHeight: 844, offsetX: 0, offsetY: 844 / 2 - (90 + 500) / 2, viewWidth: 390, viewHeight: 844 });
+  });
+
+  // The Earth (world origin, on the optical axis) must land exactly on the midpoint between the
+  // top bar's bottom and the sheet's top, and the frustum must not be scaled at all — so a taller
+  // sheet only moves the Earth, it never magnifies it.
   it.each([
-    [390, 844, 522.4],
-    [412, 915, 200],
-    [360, 780, 468],
-  ])("centres the origin above the covered band and keeps the aspect ratio (%ipx x %ipx, covered %i)", (width, height, covered) => {
-    const offset = phoneViewOffset(width, height, covered);
-    expect(offset).not.toBeNull();
-    const noOffset = projectedFrustum(width, height, 40, null);
-    const withOffset = projectedFrustum(width, height, 40, offset);
-    // Pixel row (from the top of the rendered window) that the on-axis object (near-plane y=0)
-    // projects to: newTop maps to row 0, (newTop - h) maps to row `height`.
-    const row = (height * withOffset.top) / withOffset.h;
-    expect(row).toBeCloseTo((height - covered) / 2, 6);
-    // No stretch: the ratio of frustum width to height is the same with and without the offset.
-    expect(withOffset.w / withOffset.h).toBeCloseTo(noOffset.w / noOffset.h, 10);
+    [390, 844, 92, 505],
+    [390, 844, 92, 322],
+    [768, 1024, 96, 402],
+    [844, 390, 60, 187],
+  ])("centres the origin between top bar and sheet without scaling (%ix%i, bar %i, sheet %i)", (w, h, bar, sheet) => {
+    const offset = sheetViewOffset(w, h, bar, sheet);
+    const plain = projectedFrustum(w, h, 40, null);
+    const shifted = projectedFrustum(w, h, 40, offset);
+    const row = (h * shifted.top) / shifted.h;
+    expect(row).toBeCloseTo((bar + sheet) / 2, 6);
+    expect(shifted.w).toBeCloseTo(plain.w, 12);
+    expect(shifted.h).toBeCloseTo(plain.h, 12);
   });
 });
 
-describe("phoneInitialDistance", () => {
-  it("matches initialDistance exactly when there is nothing covered", () => {
-    expect(phoneInitialDistance(390, 844, 0)).toBeCloseTo(initialDistance(390 / 844), 10);
-    expect(phoneInitialDistance(390, 844, -1)).toBeCloseTo(initialDistance(390 / 844), 10);
+describe("sheetMaxFraction / sheetWorstCaseHeight", () => {
+  it("uses the 60dvh sheet ceiling, or 50dvh on short (<560px) viewports", () => {
+    expect(sheetMaxFraction(844)).toBe(0.6);
+    expect(sheetMaxFraction(560)).toBe(0.6);
+    expect(sheetMaxFraction(559)).toBe(0.5);
+  });
+  it("is the space between the top bar and the tallest possible sheet (H - bar - (frac*H + 8))", () => {
+    expect(sheetWorstCaseHeight(844, 92)).toBeCloseTo(844 - 92 - (0.6 * 844 + 8), 9);
+    expect(sheetWorstCaseHeight(390, 60)).toBeCloseTo(390 - 60 - (0.5 * 390 + 8), 9);
+    expect(sheetWorstCaseHeight(300, 400)).toBe(0);
+  });
+});
+
+describe("sheetInitialDistance", () => {
+  it("depends only on the viewport and the top bar, not on any sheet measurement", () => {
+    // Signature has no sheet argument at all; same inputs -> same distance.
+    expect(sheetInitialDistance(390, 844, 92)).toBe(sheetInitialDistance(390, 844, 92));
   });
 
-  it("moves the camera further back as more of the screen is covered", () => {
-    const a = phoneInitialDistance(390, 844, 200);
-    const b = phoneInitialDistance(390, 844, 500);
-    const base = phoneInitialDistance(390, 844, 0);
-    expect(a).toBeGreaterThan(base);
-    expect(b).toBeGreaterThan(a);
-  });
-
-  // The real proof this fixes the "globe cropped on every edge" bug: replay the actual post-offset
-  // frustum (the same math phoneViewOffset is built against) and check the Earth's near-plane
-  // silhouette — diameter 2 * tan(asin(1 / distance)), exactly, for an on-axis sphere of radius 1
-  // — is exactly 60% of the narrower visible extent, and therefore (being centred by
-  // phoneViewOffset) never exceeds half of either extent, i.e. is never clipped.
+  // With the tallest sheet the layout allows (60dvh + 8px margin), the Earth — centred by
+  // sheetViewOffset in the gap — must fit inside it: top edge below the top bar, bottom edge
+  // above the sheet, and inside the width.
   it.each([
-    [390, 844, 522.4],
-    [412, 915, 200],
-    [360, 780, 468],
-  ])("sizes the Earth to exactly 60%% of the narrower visible extent, never clipped (%ipx x %ipx, covered %i)", (width, height, covered) => {
-    const distance = phoneInitialDistance(width, height, covered);
-    const offset = phoneViewOffset(width, height, covered);
-    const frustum = projectedFrustum(width, height, 40, offset);
-    const theta = Math.asin(1 / distance);
-    const diameter = 2 * Math.tan(theta);
-    expect(diameter).toBeCloseTo(0.6 * Math.min(frustum.h, frustum.w), 9);
-    expect(diameter / 2).toBeLessThanOrEqual(frustum.h / 2);
-    expect(diameter / 2).toBeLessThanOrEqual(frustum.w / 2);
+    [390, 844, 92],
+    [360, 780, 92],
+    [768, 1024, 96],
+    [640, 900, 96],
+    [844, 390, 60],
+  ])("fits the Earth inside the worst-case gap (%ix%i, bar %i)", (w, h, bar) => {
+    const d = sheetInitialDistance(w, h, bar);
+    const r = earthRadiusPx(d, h);
+    const sheetTop = h - (sheetMaxFraction(h) * h + 8);
+    const cy = (bar + sheetTop) / 2;
+    expect(cy - r).toBeGreaterThanOrEqual(bar);
+    expect(cy + r).toBeLessThanOrEqual(sheetTop);
+    expect(2 * r).toBeLessThanOrEqual(w);
+    // ...and it isn't needlessly tiny: fills 90% of the tighter dimension.
+    expect(2 * r).toBeCloseTo(0.9 * Math.min(w, sheetWorstCaseHeight(h, bar)), 6);
   });
+});
 
-  it("sheet-open worst case still fits once the sheet is later closed (more room, never less)", () => {
-    const width = 390, height = 844;
-    const distance = phoneInitialDistance(width, height, coveredHeightFromSheetTop(height, 322)); // realistic measured top
-    const closedFrustum = projectedFrustum(width, height, 40, null); // sheet closed: no offset
-    const theta = Math.asin(1 / distance);
-    const diameter = 2 * Math.tan(theta);
-    expect(diameter / 2).toBeLessThan(closedFrustum.h / 2);
-    expect(diameter / 2).toBeLessThan(closedFrustum.w / 2);
+describe("earthRadiusPx", () => {
+  it("matches the frustum projection of the unit sphere's silhouette", () => {
+    // d = 1/sin(12°): silhouette half-angle 12°, tan(12°)/tan(20°) of half the screen height.
+    const d = 1 / Math.sin((12 * Math.PI) / 180);
+    expect(earthRadiusPx(d, 900)).toBeCloseTo((Math.tan((12 * Math.PI) / 180) / Math.tan((20 * Math.PI) / 180)) * 450, 6);
   });
 });

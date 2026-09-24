@@ -129,23 +129,31 @@ test("phone: bottom sheet with tabs, no horizontal overflow", async ({ page }) =
   const readout = page.getByTestId("globe-readout");
   await expect(readout).toBeVisible();
   await expect(readout).toContainText("UTC");
-  // The Earth's projected centre (a throttled data-earth-cy attribute written by GlobeScene each
-  // frame — see GlobeScene.tsx) should land within +/-10% of screen height of the midpoint between
-  // the top bar's bottom edge and the sheet's top edge, i.e. centred in the space actually visible
-  // between them, not hidden behind the top bar or cropped by the sheet.
+  // The Earth's projected centre (data-earth-cy, written by GlobeScene outside production) must sit
+  // within +/-5% of screen height of the midpoint between the top bar's bottom and the sheet's top
+  // — on the short Overview tab AND the tall History tab (a taller sheet moves the Earth up; it
+  // never magnifies it).
   const globeSection = page.getByLabel("Live globe of tracked objects");
+  const topBar = page.getByTestId("globe-topbar");
+  const expectCentred = async (tab: string) => {
+    await expect.poll(async () => {
+      const tb = await topBar.boundingBox();
+      const sb = await sheet.boundingBox();
+      const cy = Number(await globeSection.getAttribute("data-earth-cy"));
+      if (!tb || !sb || !Number.isFinite(cy)) return Infinity;
+      return Math.abs(cy - (tb.y + tb.height + sb.y) / 2);
+    }, { timeout: 5_000, message: `${tab}: Earth centre should be within 5% of the top-bar/sheet midpoint` }).toBeLessThanOrEqual(844 * 0.05);
+  };
   await expect.poll(async () => globeSection.getAttribute("data-earth-cy"), { timeout: 5_000 }).not.toBeNull();
-  const topBarBox = await page.getByTestId("globe-topbar").boundingBox();
-  const sheetBoxForCentring = await sheet.boundingBox();
-  const earthCy = Number(await globeSection.getAttribute("data-earth-cy"));
-  if (!topBarBox || !sheetBoxForCentring) throw new Error("missing bounding box for top bar or sheet");
-  const expectedMid = (topBarBox.y + topBarBox.height + sheetBoxForCentring.y) / 2;
-  const tolerance = 844 * 0.1;
-  expect(earthCy, `Earth centre (${earthCy}) should be within ${tolerance}px of the top-bar/sheet midpoint (${expectedMid})`)
-    .toBeGreaterThanOrEqual(expectedMid - tolerance);
-  expect(earthCy).toBeLessThanOrEqual(expectedMid + tolerance);
+  await expectCentred("Overview");
   await sheet.getByRole("tab", { name: "History" }).click();
   await expect(page.locator("path[data-series]")).toHaveCount(3, { timeout: 10_000 });
+  await expectCentred("History");
+  // ...and on the tallest tab the whole Earth clears the top bar.
+  await expect.poll(async () => {
+    const tb = await topBar.boundingBox();
+    return Number(await globeSection.getAttribute("data-earth-top")) - (tb!.y + tb!.height);
+  }, { timeout: 5_000, message: "History: Earth's top edge must be below the top bar" }).toBeGreaterThanOrEqual(0);
   await sheet.getByRole("tab", { name: "Overview" }).click();
   await expect(page.getByTestId("tile-PAY")).toContainText("17,750");
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
@@ -261,3 +269,47 @@ test("panels do not overlap at 1280x720", async ({ page }) => {
       expect(overlap, `panels ${i} and ${j} overlap`).toBe(false);
     }
 });
+
+// Every viewport: nothing overlaps (panels, dock, sheet, control bar) and the Live button is
+// really clickable — the element at its centre is the button itself, not something covering it.
+for (const [w, h] of [[640, 900], [768, 1024], [844, 390], [1024, 768], [1280, 720]] as const) {
+  test(`${w}x${h}: no overlap and Live button clickable`, async ({ page }) => {
+    await page.setViewportSize({ width: w, height: h });
+    await mockApi(page);
+    await page.goto("/");
+    await expect(page.locator("canvas")).toBeVisible();
+    await expect(page.locator("path[data-series], [data-testid=tile-PAY]").first()).toBeVisible({ timeout: 10_000 });
+    const sheetLayout = w < 1024 || h < 560;
+    await expect(page.getByTestId("mobile-sheet")).toHaveCount(sheetLayout ? 1 : 0);
+    await expect(page.getByTestId("panel-dock")).toHaveCount(sheetLayout ? 0 : 1);
+    await page.waitForTimeout(500); // let charts/ResizeObservers settle
+    const boxes = await page.locator("[data-panel], [data-testid=panel-dock], [data-testid=mobile-sheet], [data-testid=globe-topbar]")
+      .evaluateAll((els) => els.map((e) => {
+        const target = e.getAttribute("data-testid") === "globe-topbar" ? [...e.children] : [e];
+        const rs = target.map((t) => t.getBoundingClientRect());
+        return { id: e.getAttribute("data-panel") ?? e.getAttribute("data-testid"), rects: rs.map((r) => r.toJSON() as DOMRect) };
+      }));
+    for (let i = 0; i < boxes.length; i++)
+      for (let j = i + 1; j < boxes.length; j++)
+        for (const a of boxes[i].rects)
+          for (const b of boxes[j].rects) {
+            const overlap = a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+            expect(overlap, `${boxes[i].id} overlaps ${boxes[j].id}`).toBe(false);
+          }
+    // Panels may extend past the viewport inside a (scrollable) desktop column; the columns
+    // themselves, the dock, the sheet and the control bar must all fit on screen.
+    const onScreen = await page.locator("[data-col], [data-testid=panel-dock], [data-testid=mobile-sheet], [data-testid=globe-topbar] > *")
+      .evaluateAll((els) => els.map((e) => e.getBoundingClientRect().toJSON() as DOMRect));
+    for (const b of onScreen) {
+      expect(b.left).toBeGreaterThanOrEqual(0);
+      expect(b.right).toBeLessThanOrEqual(w);
+      expect(b.top).toBeGreaterThanOrEqual(0);
+      expect(b.bottom).toBeLessThanOrEqual(h);
+    }
+    const live = page.getByRole("button", { name: "Live" });
+    const lb = (await live.boundingBox())!;
+    const hit = await page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.textContent ?? null, [lb.x + lb.width / 2, lb.y + lb.height / 2]);
+    expect(hit, "element at the Live button's centre").toBe("Live");
+    await live.click({ trial: true });
+  });
+}

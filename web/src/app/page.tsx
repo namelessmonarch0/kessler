@@ -5,12 +5,13 @@ import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { PANELS, type PanelId } from "@/lib/panels";
 import { regimesFor, useExplorer } from "@/lib/store";
-import { useIsMobile } from "@/lib/useIsMobile";
+import { useSheetLayout } from "@/lib/useIsMobile";
 import type { BreakdownResponse, Meta, TimeseriesResponse } from "@/lib/types";
 import { MobileSheet } from "@/components/layout/MobileSheet";
 import { Panel } from "@/components/layout/Panel";
+import { PanelColumn } from "@/components/layout/PanelColumn";
 import { PanelDock } from "@/components/layout/PanelDock";
-import { PANEL_CONTENT, type PanelCtx } from "@/components/panels/panelContent";
+import { PANEL_CONTENT, type Load, type PanelCtx } from "@/components/panels/panelContent";
 
 // GlobeSection pulls in three/R3F/satellite.js — by far the largest slice of the
 // page's JS — and only ever renders client-side anyway (it probes WebGL support in an effect and
@@ -23,8 +24,6 @@ const GlobeSection = dynamic(() => import("@/components/globe/GlobeSection").the
   loading: () => <section className="fixed inset-0" aria-label="Live globe of tracked objects" />,
 });
 
-type Load<T> = { data: T | null; error: boolean };
-
 export default function Explorer() {
   const [meta, setMeta] = useState<Load<Meta>>({ data: null, error: false });
   const [ts, setTs] = useState<Load<TimeseriesResponse>>({ data: null, error: false });
@@ -33,7 +32,12 @@ export default function Explorer() {
   const types = useExplorer((s) => s.types);
   const orbits = useExplorer((s) => s.orbits);
   const hydratePanels = useExplorer((s) => s.hydratePanels);
-  const isMobile = useIsMobile();
+  // null until hydrated: the server HTML (and the hydration pass) renders both layout shells and
+  // CSS (`sheet:` / `wide:` variants) shows the right one, so first paint never flashes the wrong
+  // layout. Panel bodies are rendered in only ONE shell at a time — the desktop columns before
+  // hydration (the sheet shows just its tab bar until then), then whichever layout matches — so
+  // there's never a second SearchBox (or any other duplicated panel) in the DOM.
+  const sheet = useSheetLayout();
 
   useEffect(() => hydratePanels(), [hydratePanels]);
 
@@ -65,22 +69,21 @@ export default function Explorer() {
   return (
     <main className="h-dvh overflow-hidden">
       <GlobeSection />
-      {isMobile ? (
-        <MobileSheet ctx={ctx} />
-      ) : (
-        <>
-          <div className="pointer-events-none fixed inset-x-0 top-3 z-20 flex justify-center px-[calc(theme(spacing.4)+var(--col))]" style={{ ["--col" as string]: "clamp(320px, 28vw, 380px)" }}>
+      {sheet !== false && <MobileSheet ctx={ctx} showBody={sheet === true} />}
+      {sheet !== true && (
+        <div className="sheet:hidden">
+          <div className="pointer-events-none fixed inset-x-0 top-3 z-20 flex justify-center px-[calc(theme(spacing.4)+var(--col-l))]">
             <PanelDock />
           </div>
-          <div className="pointer-events-none fixed bottom-4 left-4 top-14 z-10 flex w-[clamp(320px,28vw,380px)] flex-col justify-between gap-3 overflow-y-auto">
+          <PanelColumn side="left" className="pointer-events-none fixed bottom-4 left-4 top-14 z-10 flex w-[var(--col-l)] flex-col justify-between gap-3 overflow-y-auto">
             <div className="flex flex-col gap-3">{panel("overview")}{panel("filters")}</div>
             {panel("history")}
-          </div>
-          <div className="pointer-events-none fixed bottom-4 right-4 top-14 z-10 flex w-[clamp(320px,26vw,360px)] flex-col justify-between gap-3 overflow-y-auto">
+          </PanelColumn>
+          <PanelColumn side="right" className="pointer-events-none fixed bottom-4 right-4 top-14 z-10 flex w-[var(--col-r)] flex-col justify-between gap-3 overflow-y-auto">
             <div className="flex flex-col gap-3">{panel("search")}{panel("chat")}</div>
             {panel("owners")}
-          </div>
-        </>
+          </PanelColumn>
+        </div>
       )}
     </main>
   );

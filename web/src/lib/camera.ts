@@ -5,78 +5,53 @@ export function initialDistance(aspect: number, fovDeg = 40): number {
   return 1 / Math.sin((0.6 * Math.min(v, h)) / 2);
 }
 
-/** How much of the bottom of a phone screen the (open) sheet actually covers, from its REAL
- * measured top edge (`getBoundingClientRect().top`, pushed into the store by MobileSheet via a
- * ResizeObserver — see MobileSheet.tsx) rather than assumed from its `max-h-[60dvh]` CSS ceiling.
- *
- * `max-h` is only an upper bound: the sheet's actual rendered height is driven by its content
- * (the short Overview tab vs. the taller History chart), which is very often well short of that
- * max. An earlier version of this file assumed the sheet always renders at the full 60dvh, which
- * shifted the globe's projection centre much further up than the real sheet required — the Earth
- * ended up pushed behind the top bar with a large empty gap above the (much shorter) real sheet.
- * See fix round 2 in task-5-report.md.
- *
- * `sheetTop` is `null` before the first measurement arrives, or when there's nothing to measure
- * (desktop/tablet, or the sheet closed) — treated as nothing covered until/unless it does. */
-export function coveredHeightFromSheetTop(screenHeight: number, sheetTop: number | null): number {
-  if (sheetTop === null) return 0;
-  return Math.max(screenHeight - sheetTop, 0);
+/** Screen radius (CSS px) of the unit-sphere Earth seen on-axis from `distance` Earth radii, for
+ * a canvas `screenHeight` px tall with vertical field of view `fovDeg`. The silhouette's
+ * half-angle is asin(1/d); its near-plane radius is tan of that, and the near plane spans
+ * 2·tan(fov/2) over `screenHeight` px. Unaffected by sheetViewOffset (a pure shift). */
+export function earthRadiusPx(distance: number, screenHeight: number, fovDeg = 40): number {
+  const half = Math.tan((fovDeg * Math.PI) / 360);
+  return (Math.tan(Math.asin(Math.min(1 / distance, 1))) / half) * (screenHeight / 2);
 }
 
-/** Parameters for `THREE.PerspectiveCamera#setViewOffset(fullWidth, fullHeight, x, y, width,
- * height)` that push the camera's optical centre up by half of `coveredHeight`, so an object at
- * the world origin (the Earth) renders centred in the region of the canvas *above* whatever's
- * covered at the bottom (the phone sheet), instead of centred on the full canvas.
- *
- * Derivation: three.js's PerspectiveCamera builds a full symmetric frustum from fov/aspect, then
- * (with a view offset set) does `top -= offsetY * height / fullHeight` and `height *= viewHeight /
- * fullHeight` before using the result as the near-plane bounds. Solving for the on-axis object's
- * resulting pixel row with `offsetY = coveredHeight` and `fullHeight = height + coveredHeight`
- * gives exactly `(height - coveredHeight) / 2` — the vertical centre of the area above the
- * covered band. `fullWidth` is grown by that same `fullHeight / height` factor (and `offsetX`
- * centred within it) purely so the width and height frustum bounds are scaled by the same ratio;
- * three.js scales each axis independently, and without this the shift would stretch the globe
- * vertically instead of just moving it. tests/unit/camera.test.ts replays this frustum math
- * directly to check both properties (the target row, and the unchanged aspect).
- *
- * Returns null when there's nothing to correct for; callers should `clearViewOffset()` then. */
-export function phoneViewOffset(
+/** Fraction of the viewport height the bottom sheet may take at most — must match the sheet's
+ * CSS `max-height` (60dvh, or 50dvh on short viewports; see MobileSheet.tsx). */
+export function sheetMaxFraction(screenHeight: number): number {
+  return screenHeight < 560 ? 0.5 : 0.6;
+}
+
+/** Height of the gap between the top bar's bottom edge and the tallest sheet the layout allows
+ * (max-height fraction of the viewport + its 8px bottom margin). */
+export function sheetWorstCaseHeight(screenHeight: number, topBarBottom: number): number {
+  return Math.max(screenHeight - topBarBottom - (sheetMaxFraction(screenHeight) * screenHeight + 8), 0);
+}
+
+/** `THREE.PerspectiveCamera#setViewOffset` parameters for the bottom-sheet layout: a pure
+ * vertical shift (full size == view size, so nothing is magnified or squashed) that moves the
+ * on-axis Earth from the canvas centre (H/2) to the midpoint between the top bar's bottom edge
+ * and the sheet's top edge. three.js does not clamp the view window to the full image, so a
+ * negative or out-of-range offset is fine. Returns null for a zero-size canvas. */
+export function sheetViewOffset(
   width: number,
   height: number,
-  coveredHeight: number,
+  topBarBottom: number,
+  sheetTop: number,
 ): { fullWidth: number; fullHeight: number; offsetX: number; offsetY: number; viewWidth: number; viewHeight: number } | null {
-  if (coveredHeight <= 0 || width <= 0 || height <= 0) return null;
-  const fullHeight = height + coveredHeight;
-  const zoom = fullHeight / height;
-  const fullWidth = width * zoom;
-  return { fullWidth, fullHeight, offsetX: (fullWidth - width) / 2, offsetY: coveredHeight, viewWidth: width, viewHeight: height };
+  if (width <= 0 || height <= 0) return null;
+  const offsetY = height / 2 - (topBarBottom + sheetTop) / 2;
+  return { fullWidth: width, fullHeight: height, offsetX: 0, offsetY, viewWidth: width, viewHeight: height };
 }
 
-/** Camera distance (Earth radii) that sizes the Earth to fill `fill` (default 0.6, matching
- * `initialDistance`'s 60%) of the narrower dimension of the area actually visible above a phone's
- * bottom sheet, once `phoneViewOffset`'s shift is applied.
- *
- * `initialDistance` targets 60% of the field of view's *angle*, which assumes a frustum symmetric
- * about the optical axis. `phoneViewOffset`'s frustum isn't symmetric (it's shifted up to clear
- * the sheet), so this instead targets 60% of the visible window's near-plane *screen extent*
- * directly (`viewHeight/fullHeight` and `viewWidth/fullWidth`, the multiplicative — not
- * shift-affected — scaling `updateProjectionMatrix` applies to the frustum's width/height): the
- * object's near-plane silhouette diameter is exactly `2 * tan(asin(1/d))`, so solving
- * `2 * tan(theta) = fill * min(hNew, wNew)` for `d = 1 / sin(theta)` sizes it to fill that
- * fraction without ever exceeding half of either extent (so, combined with `phoneViewOffset`'s
- * exact centring, it can't be clipped by the visible window's edges either).
- *
- * Falls back to exactly `initialDistance(width / height, fovDeg)` when there's nothing covered,
- * so desktop/tablet and a closed sheet are unaffected by this function existing. */
-export function phoneInitialDistance(width: number, height: number, coveredHeight: number, fovDeg = 40, fill = 0.6): number {
-  const aspect = width / Math.max(height, 1);
-  const offset = phoneViewOffset(width, height, coveredHeight);
-  if (!offset) return initialDistance(aspect, fovDeg);
-  const halfRad = (fovDeg * Math.PI) / 360;
-  const h0 = 2 * Math.tan(halfRad);
-  const w0 = aspect * h0;
-  const hNew = h0 * (offset.viewHeight / offset.fullHeight);
-  const wNew = w0 * (offset.viewWidth / offset.fullWidth);
-  const theta = Math.atan((fill * Math.min(hNew, wNew)) / 2);
-  return 1 / Math.sin(theta);
+/** Initial camera distance in the bottom-sheet layout, computed ONCE from a fixed worst case
+ * (the tallest sheet the CSS allows, `sheetWorstCaseHeight`) so it never depends on when or
+ * what the sheet first measures, and never needs re-fitting (which would fight the user's zoom).
+ * Sizes the Earth to `fill` (90%) of the tighter of the gap's height and the screen width, so
+ * with sheetViewOffset centring it in the gap it fits even under the tallest sheet. */
+export function sheetInitialDistance(width: number, height: number, topBarBottom: number, fovDeg = 40, fill = 0.9): number {
+  const box = Math.min(width, sheetWorstCaseHeight(height, topBarBottom));
+  if (box <= 0 || height <= 0) return initialDistance(width / Math.max(height, 1), fovDeg);
+  const half = Math.tan((fovDeg * Math.PI) / 360);
+  // Invert earthRadiusPx: tan(theta) = r / (H/2) * tan(fov/2), d = 1 / sin(theta).
+  const tanTheta = ((fill * box) / 2 / (height / 2)) * half;
+  return 1 / Math.sin(Math.atan(tanTheta));
 }

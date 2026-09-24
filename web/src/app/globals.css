@@ -1,5 +1,23 @@
 @import "tailwindcss";
 
+/* Layout switch (see src/lib/useIsMobile.ts SHEET_QUERY): bottom sheet below 1024px wide or
+   560px tall, two panel columns otherwise. Pure CSS so the server HTML paints the right one. */
+@custom-variant sheet {
+  @media (max-width: 1023px), (max-height: 559px) {
+    @slot;
+  }
+}
+@custom-variant wide {
+  @media (min-width: 1024px) and (min-height: 560px) {
+    @slot;
+  }
+}
+@custom-variant short {
+  @media (max-height: 559px) {
+    @slot;
+  }
+}
+
 @theme {
   --color-bg: #000000;
   --color-card: #0e0e0e;
@@ -17,6 +35,12 @@
   --color-land: #7fd06b;
   --font-sans: var(--font-inter), system-ui, sans-serif;
   --font-mono: var(--font-departure), ui-monospace, monospace;
+}
+
+:root {
+  /* Desktop panel column widths, shared by the columns, the dock and the control bar. */
+  --col-l: clamp(320px, 28vw, 380px);
+  --col-r: clamp(320px, 26vw, 360px);
 }
 
 html, body { background: var(--color-bg); color: var(--color-ink); }
@@ -41,6 +65,25 @@ body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased; }
   padding: 14px;
 }
 
+/* A panel column that doesn't fit the viewport scrolls; fade the edge(s) with more content
+   (attributes set by PanelColumn.tsx) and keep a thin scrollbar where the platform shows one. */
+.panel-col {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(244, 244, 242, 0.4) transparent;
+}
+.panel-col[data-more-below] {
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 64px), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 64px), transparent);
+}
+.panel-col[data-more-above] {
+  -webkit-mask-image: linear-gradient(to top, #000 calc(100% - 64px), transparent);
+  mask-image: linear-gradient(to top, #000 calc(100% - 64px), transparent);
+}
+.panel-col[data-more-above][data-more-below] {
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 64px, #000 calc(100% - 64px), transparent);
+  mask-image: linear-gradient(to bottom, transparent, #000 64px, #000 calc(100% - 64px), transparent);
+}
+
 .globe-label {
   position: absolute;
   pointer-events: auto;
@@ -49,7 +92,7 @@ body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased; }
   line-height: 14px;
   padding: 2px 6px;
   border-radius: 999px;
-  background: rgba(0, 0, 0, 0.55);
+  background: rgba(0, 0, 0, 0.7);
   white-space: nowrap;
   cursor: pointer;
 }

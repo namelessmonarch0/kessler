@@ -17,6 +17,9 @@ interface ExplorerState extends Filters {
   // MobileSheet via a ResizeObserver — null before the first measurement. GlobeScene uses this
   // (not a CSS-derived guess) to know exactly how much of the screen the sheet covers.
   mobileSheetTop: number | null;
+  // Bottom edge (viewport px) of the globe's top bar (readout + Live/Fast) in the bottom-sheet
+  // layout, measured by GlobeSection — with mobileSheetTop it bounds the visible globe area.
+  topBarBottom: number | null;
   toggleType: (t: ObjectType) => void;
   setOwners: (codes: string[]) => void;
   toggleOrbit: (k: keyof Orbits) => void;
@@ -27,10 +30,11 @@ interface ExplorerState extends Filters {
   hydratePanels: () => void;
   setMobileSheetOpen: (open: boolean) => void;
   setMobileSheetTop: (top: number | null) => void;
+  setTopBarBottom: (bottom: number | null) => void;
   reset: () => void;
 }
 
-const initial = (): Filters & Pick<ExplorerState, "selectedId" | "timeScale" | "panels" | "mobileSheetOpen" | "mobileSheetTop"> => ({
+const initial = (): Filters & Pick<ExplorerState, "selectedId" | "timeScale" | "panels" | "mobileSheetOpen" | "mobileSheetTop" | "topBarBottom"> => ({
   types: [...OBJECT_TYPES],
   owners: [],
   orbits: { leo: true, high: false },
@@ -39,6 +43,7 @@ const initial = (): Filters & Pick<ExplorerState, "selectedId" | "timeScale" | "
   panels: { ...DEFAULT_VISIBILITY },
   mobileSheetOpen: true,
   mobileSheetTop: null,
+  topBarBottom: null,
 });
 
 export const useExplorer = create<ExplorerState>((set) => ({
@@ -72,6 +77,7 @@ export const useExplorer = create<ExplorerState>((set) => ({
   hydratePanels: () => set({ panels: loadVisibility(browserStorage()) }),
   setMobileSheetOpen: (mobileSheetOpen) => set({ mobileSheetOpen }),
   setMobileSheetTop: (mobileSheetTop) => set({ mobileSheetTop }),
+  setTopBarBottom: (topBarBottom) => set({ topBarBottom }),
   reset: () => set(initial()),
 }));
 
