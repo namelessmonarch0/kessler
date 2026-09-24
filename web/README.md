@@ -23,3 +23,12 @@ Open http://localhost:3000. The browser only calls `/api/*` on the same origin; 
 | `npm run lint && npm run typecheck` | ESLint + TypeScript |
 
 Data: USSPACECOM via Space-Track.org; CelesTrak.
+
+## Deploying (Vercel)
+
+The Vercel project `kessler` builds this folder: **Root Directory** `web`, framework **Next.js**. It needs two environment variables (Production and Preview):
+
+- `API_ORIGIN_URL`: the `kessler-api` Lambda Function URL, without a trailing slash (CloudFormation output `KesslerApp.ApiFunctionUrl`).
+- `ORIGIN_SECRET`: the same value as SSM `/kessler/ORIGIN_SECRET`.
+
+`vercel.json` pins functions to `cle1` (next to AWS us-east-2) and skips builds when nothing under `web/` changed since the last deployment.
