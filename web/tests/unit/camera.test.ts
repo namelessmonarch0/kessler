@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { initialDistance, phoneInitialDistance, phoneViewOffset, sheetCoveredHeight } from "@/lib/camera";
+import { coveredHeightFromSheetTop, initialDistance, phoneInitialDistance, phoneViewOffset } from "@/lib/camera";
 
 // Replays three.js PerspectiveCamera.updateProjectionMatrix's view-offset math (near=1, so the
 // near-plane bounds double as tangent values). Shared by the phoneViewOffset and phone-framing
@@ -31,12 +31,16 @@ describe("initialDistance", () => {
   });
 });
 
-describe("sheetCoveredHeight", () => {
-  it("is 0 when the sheet is closed", () => {
-    expect(sheetCoveredHeight(844, false)).toBe(0);
+describe("coveredHeightFromSheetTop", () => {
+  it("is 0 before a measurement arrives", () => {
+    expect(coveredHeightFromSheetTop(844, null)).toBe(0);
   });
-  it("is 60% of the screen height plus the sheet's 16px inset when open", () => {
-    expect(sheetCoveredHeight(844, true)).toBeCloseTo(844 * 0.6 + 16, 6);
+  it("is the gap between the screen height and the sheet's measured top", () => {
+    // Sheet's real top at row 505 (e.g. a short Overview tab, not the 60dvh max) -> covers 339px.
+    expect(coveredHeightFromSheetTop(844, 505)).toBe(339);
+  });
+  it("clamps to 0 rather than going negative (sheet top below the viewport)", () => {
+    expect(coveredHeightFromSheetTop(844, 900)).toBe(0);
   });
 });
 
@@ -109,7 +113,7 @@ describe("phoneInitialDistance", () => {
 
   it("sheet-open worst case still fits once the sheet is later closed (more room, never less)", () => {
     const width = 390, height = 844;
-    const distance = phoneInitialDistance(width, height, sheetCoveredHeight(height, true));
+    const distance = phoneInitialDistance(width, height, coveredHeightFromSheetTop(height, 322)); // realistic measured top
     const closedFrustum = projectedFrustum(width, height, 40, null); // sheet closed: no offset
     const theta = Math.asin(1 / distance);
     const diameter = 2 * Math.tan(theta);

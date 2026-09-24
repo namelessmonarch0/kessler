@@ -74,3 +74,16 @@ describe("mobile sheet open state", () => {
     expect(useExplorer.getState().mobileSheetOpen).toBe(true);
   });
 });
+
+describe("mobile sheet measured top", () => {
+  it("starts null (unmeasured), can be set and cleared, and resets to null", () => {
+    expect(useExplorer.getState().mobileSheetTop).toBeNull();
+    useExplorer.getState().setMobileSheetTop(505);
+    expect(useExplorer.getState().mobileSheetTop).toBe(505);
+    useExplorer.getState().setMobileSheetTop(null);
+    expect(useExplorer.getState().mobileSheetTop).toBeNull();
+    useExplorer.getState().setMobileSheetTop(322);
+    useExplorer.getState().reset();
+    expect(useExplorer.getState().mobileSheetTop).toBeNull();
+  });
+});

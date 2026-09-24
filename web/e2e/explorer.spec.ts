@@ -91,6 +91,25 @@ test("phone: bottom sheet with tabs, no horizontal overflow", async ({ page }) =
     && liveBox.y < sheetBox.y + sheetBox.height && sheetBox.y < liveBox.y + liveBox.height;
   expect(overlap, "Live button must not overlap the sheet").toBe(false);
   expect(liveBox.y + liveBox.height, "Live button should sit in the top 20% of the screen").toBeLessThanOrEqual(844 * 0.2);
+  // The date/sun readout lives in the same top bar, on one line, without overlapping the Earth.
+  const readout = page.getByTestId("globe-readout");
+  await expect(readout).toBeVisible();
+  await expect(readout).toContainText("UTC");
+  // The Earth's projected centre (a throttled data-earth-cy attribute written by GlobeScene each
+  // frame — see GlobeScene.tsx) should land within +/-10% of screen height of the midpoint between
+  // the top bar's bottom edge and the sheet's top edge, i.e. centred in the space actually visible
+  // between them, not hidden behind the top bar or cropped by the sheet.
+  const globeSection = page.getByLabel("Live globe of tracked objects");
+  await expect.poll(async () => globeSection.getAttribute("data-earth-cy"), { timeout: 5_000 }).not.toBeNull();
+  const topBarBox = await page.getByTestId("globe-topbar").boundingBox();
+  const sheetBoxForCentring = await sheet.boundingBox();
+  const earthCy = Number(await globeSection.getAttribute("data-earth-cy"));
+  if (!topBarBox || !sheetBoxForCentring) throw new Error("missing bounding box for top bar or sheet");
+  const expectedMid = (topBarBox.y + topBarBox.height + sheetBoxForCentring.y) / 2;
+  const tolerance = 844 * 0.1;
+  expect(earthCy, `Earth centre (${earthCy}) should be within ${tolerance}px of the top-bar/sheet midpoint (${expectedMid})`)
+    .toBeGreaterThanOrEqual(expectedMid - tolerance);
+  expect(earthCy).toBeLessThanOrEqual(expectedMid + tolerance);
   await sheet.getByRole("tab", { name: "History" }).click();
   await expect(page.locator("path[data-series]")).toHaveCount(3, { timeout: 10_000 });
   await sheet.getByRole("tab", { name: "Overview" }).click();

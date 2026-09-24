@@ -13,6 +13,10 @@ interface ExplorerState extends Filters {
   // component state, so GlobeScene (inside the <Canvas> tree, not a descendant of MobileSheet)
   // can react to it too, shifting the globe's framing to clear the sheet while it's open.
   mobileSheetOpen: boolean;
+  // The sheet's real measured top edge (getBoundingClientRect().top, in viewport px), pushed by
+  // MobileSheet via a ResizeObserver — null before the first measurement. GlobeScene uses this
+  // (not a CSS-derived guess) to know exactly how much of the screen the sheet covers.
+  mobileSheetTop: number | null;
   toggleType: (t: ObjectType) => void;
   setOwners: (codes: string[]) => void;
   toggleOrbit: (k: keyof Orbits) => void;
@@ -22,10 +26,11 @@ interface ExplorerState extends Filters {
   togglePanel: (id: PanelId) => void;
   hydratePanels: () => void;
   setMobileSheetOpen: (open: boolean) => void;
+  setMobileSheetTop: (top: number | null) => void;
   reset: () => void;
 }
 
-const initial = (): Filters & Pick<ExplorerState, "selectedId" | "timeScale" | "panels" | "mobileSheetOpen"> => ({
+const initial = (): Filters & Pick<ExplorerState, "selectedId" | "timeScale" | "panels" | "mobileSheetOpen" | "mobileSheetTop"> => ({
   types: [...OBJECT_TYPES],
   owners: [],
   orbits: { leo: true, high: false },
@@ -33,6 +38,7 @@ const initial = (): Filters & Pick<ExplorerState, "selectedId" | "timeScale" | "
   timeScale: 1,
   panels: { ...DEFAULT_VISIBILITY },
   mobileSheetOpen: true,
+  mobileSheetTop: null,
 });
 
 export const useExplorer = create<ExplorerState>((set) => ({
@@ -65,6 +71,7 @@ export const useExplorer = create<ExplorerState>((set) => ({
     }),
   hydratePanels: () => set({ panels: loadVisibility(browserStorage()) }),
   setMobileSheetOpen: (mobileSheetOpen) => set({ mobileSheetOpen }),
+  setMobileSheetTop: (mobileSheetTop) => set({ mobileSheetTop }),
   reset: () => set(initial()),
 }));
 

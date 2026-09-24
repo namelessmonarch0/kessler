@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { PANELS, type PanelId } from "@/lib/panels";
 import { PANEL_CONTENT, type PanelCtx } from "@/components/panels/panelContent";
 import { useExplorer } from "@/lib/store";
@@ -12,6 +12,8 @@ export function MobileSheet({ ctx }: { ctx: PanelCtx }) {
   // page, can read it too and keep the globe framed above the sheet while it's open.
   const open = useExplorer((s) => s.mobileSheetOpen);
   const setOpen = useExplorer((s) => s.setMobileSheetOpen);
+  const setSheetTop = useExplorer((s) => s.setMobileSheetTop);
+  const sheetRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (selectedId !== null) {
@@ -24,8 +26,31 @@ export function MobileSheet({ ctx }: { ctx: PanelCtx }) {
     }
   }, [selectedId, setOpen]);
 
+  // Publishes the sheet's real rendered top edge so GlobeScene can frame the globe against how
+  // much space the sheet *actually* takes — its height is content-driven (`max-h-[60dvh]` is only
+  // a ceiling: the short Overview tab renders much shorter than the taller History chart), so a
+  // fixed assumption from that CSS max was wrong (see camera.ts's coveredHeightFromSheetTop). A
+  // ResizeObserver catches every case the top can change (open/collapse, active tab, content
+  // load) since this element is bottom-anchored — its own height change is exactly what moves its
+  // top. Relies on the observer's own initial callback (always fired once, async, right after
+  // `observe()`) rather than an extra synchronous call here, so there's no synchronous setState
+  // in the effect body to justify.
+  useEffect(() => {
+    const el = sheetRef.current;
+    if (!el) return;
+    const update = () => setSheetTop(el.getBoundingClientRect().top);
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    window.addEventListener("resize", update);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", update);
+      setSheetTop(null);
+    };
+  }, [setSheetTop]);
+
   return (
-    <div data-testid="mobile-sheet" className="panel fixed inset-x-2 bottom-2 z-20 max-h-[60dvh] !p-0">
+    <div ref={sheetRef} data-testid="mobile-sheet" className="panel fixed inset-x-2 bottom-2 z-20 max-h-[60dvh] !p-0">
       <div role="tablist" aria-label="Panels" className="flex gap-1 overflow-x-auto border-b-2 border-line px-2 py-2">
         {PANELS.map((p) => (
           <button

@@ -5,11 +5,22 @@ export function initialDistance(aspect: number, fovDeg = 40): number {
   return 1 / Math.sin((0.6 * Math.min(v, h)) / 2);
 }
 
-/** Pixel height, at the bottom of a phone screen, that the bottom sheet (see MobileSheet.tsx)
- * covers while open: its `max-h-[60dvh]` allotment plus its own `bottom-2` (8px) inset. 0 when
- * closed (or on tablet/desktop, which never call this) — nothing to clear in that case. */
-export function sheetCoveredHeight(screenHeight: number, sheetOpen: boolean): number {
-  return sheetOpen ? screenHeight * 0.6 + 16 : 0;
+/** How much of the bottom of a phone screen the (open) sheet actually covers, from its REAL
+ * measured top edge (`getBoundingClientRect().top`, pushed into the store by MobileSheet via a
+ * ResizeObserver — see MobileSheet.tsx) rather than assumed from its `max-h-[60dvh]` CSS ceiling.
+ *
+ * `max-h` is only an upper bound: the sheet's actual rendered height is driven by its content
+ * (the short Overview tab vs. the taller History chart), which is very often well short of that
+ * max. An earlier version of this file assumed the sheet always renders at the full 60dvh, which
+ * shifted the globe's projection centre much further up than the real sheet required — the Earth
+ * ended up pushed behind the top bar with a large empty gap above the (much shorter) real sheet.
+ * See fix round 2 in task-5-report.md.
+ *
+ * `sheetTop` is `null` before the first measurement arrives, or when there's nothing to measure
+ * (desktop/tablet, or the sheet closed) — treated as nothing covered until/unless it does. */
+export function coveredHeightFromSheetTop(screenHeight: number, sheetTop: number | null): number {
+  if (sheetTop === null) return 0;
+  return Math.max(screenHeight - sheetTop, 0);
 }
 
 /** Parameters for `THREE.PerspectiveCamera#setViewOffset(fullWidth, fullHeight, x, y, width,

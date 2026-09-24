@@ -47,7 +47,7 @@ function Readout({ live }: { live: boolean }) {
     return () => window.clearInterval(id);
   }, [live]);
   return (
-    <p className="label text-center [text-shadow:0_1px_3px_rgba(0,0,0,0.85)]" aria-live="off">
+    <p data-testid="globe-readout" className="label text-center [text-shadow:0_1px_3px_rgba(0,0,0,0.85)]" aria-live="off">
       <span className="hidden sm:inline">{full}</span>
       <span className="sm:hidden">{short}</span>
     </p>
@@ -147,7 +147,7 @@ export function GlobeSection() {
             gl={{ antialias: true }}
           >
             <color attach="background" args={["#000000"]} />
-            <GlobeScene leo={leo} high={high} active={active} labelsRef={labelsRef} />
+            <GlobeScene leo={leo} high={high} active={active} labelsRef={labelsRef} sectionRef={sectionRef} />
           </Canvas>
         </GlobeErrorBoundary>
       )}
@@ -161,7 +161,7 @@ export function GlobeSection() {
           MobileSheet) and can cover roughly the lower half of it, so these controls move to a top
           bar there instead of sitting at the usual bottom-4 (which the sheet would cover, or come
           close to). At >=640px (tablet/desktop, no sheet) this is unchanged from before Task 5. */}
-      <div className="absolute left-1/2 top-3 flex -translate-x-1/2 flex-col items-center gap-2 sm:top-auto sm:bottom-4">
+      <div data-testid="globe-topbar" className="absolute left-1/2 top-3 flex -translate-x-1/2 flex-col items-center gap-2 sm:top-auto sm:bottom-4">
         <Readout live={webgl === true && !broken} />
         <div className="flex gap-2">
           {([1, 4320] as const).map((s) => (

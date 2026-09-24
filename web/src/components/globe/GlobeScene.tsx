@@ -5,7 +5,7 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { useCallback, useEffect, useRef } from "react";
 import * as THREE from "three";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
-import { phoneInitialDistance, phoneViewOffset, sheetCoveredHeight } from "@/lib/camera";
+import { coveredHeightFromSheetTop, phoneInitialDistance, phoneViewOffset } from "@/lib/camera";
 import { simClock } from "@/lib/clock";
 import type { OrbitRecord } from "@/lib/snapshot";
 import { useExplorer } from "@/lib/store";
@@ -28,6 +28,7 @@ export function GlobeScene({
   high,
   active = true,
   labelsRef,
+  sectionRef,
 }: {
   leo: OrbitRecord[] | null;
   high: OrbitRecord[] | null;
@@ -37,6 +38,10 @@ export function GlobeScene({
   active?: boolean;
   /** DOM overlay for object labels, filled in by Task 7. Unused here. */
   labelsRef?: React.RefObject<HTMLDivElement | null>;
+  /** GlobeSection's outer <section>. Written to (not read) here — a throttled `data-earth-cy`
+   * attribute exposing the Earth's current projected screen Y, in CSS px, so tests can verify the
+   * globe is actually framed where the phone layout intends it (see the "phone:" e2e test). */
+  sectionRef?: React.RefObject<HTMLElement | null>;
 }) {
   if (process.env.NODE_ENV !== "production" && typeof window !== "undefined" && window.__LEO_FORCE_GLOBE_ERROR__) {
     throw new Error("Forced globe error (test-only, via window.__LEO_FORCE_GLOBE_ERROR__)");
@@ -48,38 +53,48 @@ export function GlobeScene({
   const timeScale = useExplorer((s) => s.timeScale);
   const selectedId = useExplorer((s) => s.selectedId);
   const mobileSheetOpen = useExplorer((s) => s.mobileSheetOpen);
+  const mobileSheetTop = useExplorer((s) => s.mobileSheetTop);
   // Sparse: index 0 = LEO, 1 = HIGH. A group whose snapshot hasn't loaded (or errored) yet
   // leaves a hole here rather than a function — findPosition skips holes instead of calling them.
   const locators = useRef<(Locator | undefined)[]>([]);
+  // Guards the initial camera-position effect below so it only ever runs once, even though it now
+  // has to wait for a real dependency (the sheet's measured top) rather than firing unconditionally
+  // at mount.
+  const positioned = useRef(false);
 
   useEffect(() => simClock.setScale(timeScale), [timeScale]);
 
+  // How much of the bottom of the screen the phone sheet covers right now — 0 on desktop/tablet,
+  // when the sheet is collapsed, or before MobileSheet's ResizeObserver has measured it once yet.
+  const isPhone = size.width < 640;
+  const covered = isPhone && mobileSheetOpen ? coveredHeightFromSheetTop(size.height, mobileSheetTop) : 0;
+
   useEffect(() => {
+    // On phone, with the sheet open, wait for its real measured top (see coveredHeightFromSheetTop
+    // in camera.ts — the sheet's rendered height is content-driven, not a fixed fraction of the
+    // viewport, so there's no safe guess to size against before that first measurement arrives).
+    // Desktop/tablet, or the sheet already closed, need no measurement and proceed immediately.
+    if (isPhone && mobileSheetOpen && mobileSheetTop === null) return;
+    if (positioned.current) return;
+    positioned.current = true;
     const dir = new THREE.Vector3(0.6, 0.9, 3.6).normalize();
-    // Below 640px (the phone breakpoint — see global-constraints.md and useIsMobile) the bottom
-    // sheet defaults open, so size the initial distance for that (worst-case, sheet-open) area —
-    // not the full screen — so the whole Earth fits above it once the setViewOffset shift below
-    // is applied. If the sheet later closes there's simply extra clearance, never a crop.
-    const isPhone = size.width < 640;
-    const covered = isPhone ? sheetCoveredHeight(size.height, true) : 0;
     camera.position.copy(dir.multiplyScalar(phoneInitialDistance(size.width, size.height, covered)));
     camera.lookAt(0, 0, 0);
-    // Once, at mount: later resizes keep whatever zoom the user chose.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [camera]);
+    // Runs once (guarded above): later resizes/sheet changes keep whatever zoom the user chose,
+    // and are instead handled by the setViewOffset effect below (a shift, not a zoom change).
+  }, [camera, size.width, size.height, isPhone, mobileSheetOpen, mobileSheetTop, covered]);
 
   // Re-centre the globe's projection above the sheet (open) or on the full screen (closed) as the
-  // phone sheet is toggled or the viewport resizes. Desktop/tablet (>=640px) always clears any
-  // offset — this never applies there. Doesn't touch camera.position/zoom (OrbitControls owns
-  // that after mount) or fight the select-driven flyTo tween below, which also only moves
-  // position — setViewOffset is a separate, compositable adjustment to the projection matrix.
+  // phone sheet is toggled, its content changes size, or the viewport resizes. Desktop/tablet
+  // (>=640px) always clears any offset — this never applies there. Doesn't touch
+  // camera.position/zoom (OrbitControls owns that after mount) or fight the select-driven flyTo
+  // tween below, which also only moves position — setViewOffset is a separate, compositable
+  // adjustment to the projection matrix.
   useEffect(() => {
-    const isPhone = size.width < 640;
-    const covered = isPhone ? sheetCoveredHeight(size.height, mobileSheetOpen) : 0;
     const offset = phoneViewOffset(size.width, size.height, covered);
     if (offset) camera.setViewOffset(offset.fullWidth, offset.fullHeight, offset.offsetX, offset.offsetY, offset.viewWidth, offset.viewHeight);
     else camera.clearViewOffset();
-  }, [camera, size.width, size.height, mobileSheetOpen]);
+  }, [camera, size.width, size.height, covered]);
 
   useEffect(() => {
     if (selectedId === null) return;
@@ -105,10 +120,24 @@ export function GlobeScene({
   const onReadyLeo = useCallback((f: Locator) => (locators.current[0] = f), []);
   const onReadyHigh = useCallback((f: Locator) => (locators.current[1] = f), []);
 
+  // Starts past the threshold so the very first frame writes immediately (tests don't have to
+  // wait out a full throttle interval before the attribute exists at all).
+  const earthCyElapsed = useRef(Infinity);
+  const earthCyOrigin = useRef(new THREE.Vector3());
   useFrame((_, dt) => {
     simClock.tick(Math.min(dt, 0.1) * 1000);
     const [x, y, z] = sunDirectionScene(new Date(simClock.now()));
     sun.current?.position.set(x * 10, y * 10, z * 10);
+
+    // Throttled (matches the labels' 250ms cadence — see global-constraints.md) so tests can read
+    // where the Earth is actually rendered, without recomputing on every single frame.
+    earthCyElapsed.current += dt;
+    if (sectionRef?.current && earthCyElapsed.current >= 0.25) {
+      earthCyElapsed.current = 0;
+      earthCyOrigin.current.set(0, 0, 0).project(camera);
+      const cy = ((1 - earthCyOrigin.current.y) / 2) * size.height;
+      sectionRef.current.setAttribute("data-earth-cy", cy.toFixed(1));
+    }
   });
 
   return (
