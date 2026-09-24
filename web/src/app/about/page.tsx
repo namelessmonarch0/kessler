@@ -31,7 +31,7 @@ export default function About() {
           <p className="label mt-4">Original team</p>
           <p className="mt-1 text-[15px] text-ink">{TEAM.join(", ")}</p>
           <p className="mt-3 text-[13px] text-ink-2">
-            Original code: <a className="underline hover:text-ink" href="https://github.com/namelessmonarch0/DebrisInLEO">github.com/namelessmonarch0/DebrisInLEO</a>
+            Original MATLAB code: <a className="underline hover:text-ink" href="https://github.com/namelessmonarch0/kessler/tree/main/matlab">github.com/namelessmonarch0/kessler/tree/main/matlab</a>
           </p>
         </Card>
         <Card>
