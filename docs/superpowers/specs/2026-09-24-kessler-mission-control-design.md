@@ -77,7 +77,7 @@ Success means:
 - **Which** (recomputed at most every 250 ms while the camera or time moves):
   - Candidates are visible objects (after filters) whose position is in front of the Earth (not occluded; the same test as picking), inside the viewport, and whose name is known.
   - They are ranked by screen distance to the viewport centre.
-  - The nearest **12** are labelled. The selected object is always labelled.
+  - The nearest **12** are labelled. The selected object is labelled first (counting toward the 12) whenever it is on-screen and in front of the Earth.
 - **Rendering:** HTML overlay labels (absolutely positioned elements in a single container; no per-label React re-render per frame):
   - Departure Mono 12 px, in the object's globe colour, on a `rgba(0,0,0,.55)` pill, offset 8 px up-right of the object with a 1 px leader.
   - Labels that would overlap an earlier (closer-to-centre) label are dropped.
