@@ -20,8 +20,8 @@ Then open http://localhost:8000/docs.
 
 | Command | What it does | Production schedule |
 |---|---|---|
-| `python -m app.jobs ingest-satcat` | CelesTrak SATCAT → `objects`, then rebuilds `yearly_stats` | daily |
-| `python -m app.jobs ingest-gp` | Space-Track GP (CelesTrak fallback) → `gp_elements` + globe snapshots | every 6 h, random minute |
+| `python -m app.jobs ingest-satcat` | CelesTrak SATCAT → `objects`, then rebuilds `yearly_stats` | daily at 05:17 UTC |
+| `python -m app.jobs ingest-gp` | Space-Track GP (CelesTrak fallback) → `gp_elements` + globe snapshots | every 6 h at minute 41 |
 | `python -m app.jobs rebuild-stats` | Recomputes `yearly_stats` from `objects` | after SATCAT |
 | `python -m app.jobs all` | All of the above | — |
 
