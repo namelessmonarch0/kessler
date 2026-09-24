@@ -10,7 +10,8 @@ def build():
 
     app = App()
     reg = KesslerRegistryStack(app, "KesslerRegistry", env=ENV)
-    ci = KesslerCiStack(app, "KesslerCi", env=ENV, github_repo="owner/repo")
+    ci = KesslerCiStack(app, "KesslerCi", env=ENV, github_repo="owner/repo",
+                        github_subject_prefix="repo:owner@11/repo@22")
     return Template.from_stack(reg), Template.from_stack(ci)
 
 
@@ -44,8 +45,9 @@ def test_ci_role_trusts_only_main_of_the_repo():
             "Action": "sts:AssumeRoleWithWebIdentity",
             "Condition": {
                 "StringEquals": {"token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
-                                 "token.actions.githubusercontent.com:sub":
-                                     "repo:owner/repo:ref:refs/heads/main"}}})]}})
+                                 "token.actions.githubusercontent.com:sub": [
+                                     "repo:owner@11/repo@22:ref:refs/heads/main",
+                                     "repo:owner/repo:ref:refs/heads/main"]}}})]}})
     ci.has_output("DeployRoleArn", {})
 
 

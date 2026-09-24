@@ -91,6 +91,8 @@ rollback headroom) with a repository policy that lets Lambda pull from it, and t
 provider plus the `kessler-github-deploy` IAM role that GitHub Actions will assume on `main`. Note
 the `DeployRoleArn` output — it is needed in step 8.
 
+GitHub signs Actions tokens with an immutable subject (`repo:<owner>@<owner_id>/<repo>@<repo_id>:ref:refs/heads/main`). Put that prefix in `infra/cdk.json` as `github_subject_prefix` (read it with `gh api repos/<owner>/<repo>/actions/oidc/customization/sub --jq .sub_claim_prefix`), or the deploy job fails with "Not authorized to perform sts:AssumeRoleWithWebIdentity".
+
 ## 5. First images and app stack
 
 This step starts at the repository root (left there by step 4).

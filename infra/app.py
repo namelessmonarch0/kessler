@@ -19,7 +19,8 @@ def ctx(name: str) -> str | None:
 
 KesslerRegistryStack(app, "KesslerRegistry", env=env)
 KesslerCiStack(app, "KesslerCi", env=env,
-               github_repo=ctx("github_repo") or "namelessmonarch0/kessler")
+               github_repo=ctx("github_repo") or "namelessmonarch0/kessler",
+               github_subject_prefix=ctx("github_subject_prefix"))
 
 image_tag, alert_email = ctx("image_tag"), ctx("alert_email")
 if image_tag and alert_email:
