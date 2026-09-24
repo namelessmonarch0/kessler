@@ -9,7 +9,7 @@ from app.ingest.snapshot import LocalSnapshotStore, SnapshotStore
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    database_url: str = "postgresql://leo:leo@localhost:5432/leo"
+    database_url: str = "postgresql://kessler:kessler@localhost:5432/kessler"
     spacetrack_user: str | None = None
     spacetrack_pass: str | None = None
     origin_secret: str | None = None

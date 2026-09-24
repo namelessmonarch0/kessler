@@ -3,7 +3,7 @@
 # Needs: docker, `docker compose up -d db` in api/, ports 8080 free.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-DB_URL="${DATABASE_URL:-postgresql://leo:leo@localhost:5432/leo}"
+DB_URL="${DATABASE_URL:-postgresql://kessler:kessler@localhost:5432/kessler}"
 RIE_DIR="${RIE_DIR:-$(mktemp -d)}"
 RIE_VERSION=1.24
 
