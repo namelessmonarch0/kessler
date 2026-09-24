@@ -68,7 +68,7 @@ export function BarChart({ data, owners }: { data: BreakdownResponse; owners: Ow
           let acc = 0;
           return (
             <g key={row.key}>
-              <text x={marginLeft - 10} y={(y(row.key) ?? 0) + y.bandwidth() / 2 + 4} textAnchor="end" className="fill-ink font-mono text-[12px]">
+              <text x={marginLeft - 10} y={(y(row.key) ?? 0) + y.bandwidth() / 2 + 4} textAnchor="end" className="fill-ink text-[13px] font-semibold">
                 {display[i]}
               </text>
               {KEYS.map((k) => {
@@ -103,7 +103,7 @@ export function BarChart({ data, owners }: { data: BreakdownResponse; owners: Ow
       {tip && tipPos && (
         <div
           ref={tipRef}
-          className="pointer-events-none fixed z-10 rounded-[10px] border-2 border-[#333] bg-[#161616] px-3 py-2.5 text-[12px] text-ink shadow-[3px_3px_0_#0a0a0a]"
+          className="pointer-events-none fixed z-10 rounded-[10px] border-2 border-[#333] bg-[#161616] px-3 py-2.5 text-[13px] text-ink shadow-[3px_3px_0_#0a0a0a]"
           style={{ left: tipPos.left, top: tipPos.top }}
         >
           {tip.text}

@@ -5,7 +5,7 @@ import { PixelIcon } from "@/components/ui/PixelIcon";
 export function Header() {
   return (
     <header className="flex flex-col items-start gap-3 py-5 sm:flex-row sm:items-center sm:justify-between">
-      <Link href="/" className="flex items-center gap-2.5 whitespace-nowrap font-mono text-[15px] text-ink">
+      <Link href="/" className="flex items-center gap-2.5 whitespace-nowrap font-mono text-[16px] text-ink">
         <PixelIcon name="sat" size={18} color={GLOBE_COLORS.PAY} /> KESSLER
       </Link>
       <nav className="flex items-center gap-5 text-sm text-ink-2">

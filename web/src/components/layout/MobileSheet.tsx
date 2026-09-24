@@ -61,7 +61,7 @@ export function MobileSheet({ ctx, showBody = true }: { ctx: PanelCtx; showBody?
               setActive(p.id);
               setOpen(true);
             }}
-            className={`shrink-0 rounded-full px-3 py-1 text-[13px] ${active === p.id ? "bg-[#1c1c1c] text-ink" : "text-ink-2"}`}
+            className={`shrink-0 rounded-full px-3 py-1 text-[13px] font-semibold ${active === p.id ? "bg-[#1c1c1c] text-ink" : "text-ink-2"}`}
           >
             {p.title}
           </button>

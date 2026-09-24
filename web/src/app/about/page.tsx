@@ -35,7 +35,7 @@ export default function About() {
           </p>
         </Card>
         <Card>
-          <h2 className="font-mono text-[18px] text-ink">How the numbers are counted</h2>
+          <h2 className="font-mono text-[19px] text-ink">How the numbers are counted</h2>
           <ul className="mt-3 list-disc space-y-2 pl-5 text-[15px] leading-relaxed text-ink-2">
             <li>The catalog lists every object tracked since Sputnik in 1957, including about 35,000 that have already re-entered.</li>
             <li>An object counts as &ldquo;in orbit&rdquo; in a year if it was first seen by then and had not re-entered by the end of that year.</li>
@@ -46,7 +46,7 @@ export default function About() {
           </ul>
         </Card>
         <Card>
-          <h2 className="font-mono text-[18px] text-ink">Sources</h2>
+          <h2 className="font-mono text-[19px] text-ink">Sources</h2>
           <ul className="mt-3 space-y-2 text-[15px] text-ink-2">
             <li>Orbital elements and catalog: USSPACECOM via <a className="underline hover:text-ink" href="https://www.space-track.org">Space-Track.org</a> and <a className="underline hover:text-ink" href="https://celestrak.org">CelesTrak</a>.</li>
             <li>Coastlines: <a className="underline hover:text-ink" href="https://www.naturalearthdata.com">Natural Earth</a> via world-atlas.</li>

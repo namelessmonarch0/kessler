@@ -155,10 +155,10 @@ export function LineChart({ data }: { data: TimeseriesResponse }) {
       {hover && tipPos && (
         <div
           ref={tipRef}
-          className="pointer-events-none fixed z-10 min-w-40 rounded-[10px] border-2 border-[#333] bg-[#161616] px-3 py-2.5 text-[12px] shadow-[3px_3px_0_#0a0a0a]"
+          className="pointer-events-none fixed z-10 min-w-40 rounded-[10px] border-2 border-[#333] bg-[#161616] px-3 py-2.5 text-[13px] shadow-[3px_3px_0_#0a0a0a]"
           style={{ left: tipPos.left, top: tipPos.top }}
         >
-          <div className="font-mono text-ink">{years[hover.i]}</div>
+          <div className="font-mono text-[12px] text-ink">{years[hover.i]}</div>
           {series.map((s) => (
             <div key={s.key} className="mt-1 flex justify-between gap-4 text-ink-2">
               <span>{TYPE_LABELS[s.key]}</span>

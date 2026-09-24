@@ -11,7 +11,7 @@ function Row({ k, v }: { k: string; v: string }) {
   return (
     <div className="flex justify-between gap-4 border-t border-[#1c1c1c] py-1.5 text-[13px]">
       <dt className="text-ink-2">{k}</dt>
-      <dd className="text-right font-mono text-ink">{v}</dd>
+      <dd className="text-right font-semibold text-ink">{v}</dd>
     </div>
   );
 }
@@ -40,7 +40,7 @@ export function ObjectCard() {
   return (
     <div data-testid="object-card">
       <div className="flex items-start justify-between gap-3">
-        <h2 className="font-mono text-[18px] text-ink">{obj?.name ?? `NORAD ${selectedId}`}</h2>
+        <h2 className="font-mono text-[19px] text-ink">{obj?.name ?? `NORAD ${selectedId}`}</h2>
         <button type="button" onClick={() => select(null)} className="text-sm text-ink-2 hover:text-ink" aria-label="Close">✕</button>
       </div>
       {error && <Unavailable what="object details" />}

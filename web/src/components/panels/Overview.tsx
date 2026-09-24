@@ -22,7 +22,7 @@ function Count({ type, value, index }: { type: ObjectType; value: number | null;
   return (
     <div data-testid={`tile-${type}`} className="flex items-baseline justify-between gap-3">
       <span className="text-[13px] text-ink-2">{TYPE_LABELS[type]}</span>
-      <span ref={ref} className="font-mono text-[20px] tabular-nums" style={{ color: GLOBE_COLORS[type] }}>{value === null ? "—" : "0"}</span>
+      <span ref={ref} className="font-mono text-[22px] tabular-nums" style={{ color: GLOBE_COLORS[type] }}>{value === null ? "—" : "0"}</span>
     </div>
   );
 }

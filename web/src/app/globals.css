@@ -23,8 +23,8 @@
   --color-card: #0e0e0e;
   --color-line: #262626;
   --color-ink: #f4f4f2;
-  --color-ink-2: #a3a29c;
-  --color-ink-3: #8f8e88;
+  --color-ink-2: #c9c8c2;
+  --color-ink-3: #a8a7a1;
   --color-pay-globe: #fff4d6;
   --color-deb-globe: #ff6a3d;
   --color-rb-globe: #c4a8ff;
@@ -44,7 +44,11 @@
 }
 
 html, body { background: var(--color-bg); color: var(--color-ink); }
-body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased; }
+body { font-family: var(--font-sans); font-weight: 500; -webkit-font-smoothing: antialiased; }
+
+/* Departure Mono ships one weight only — never let the browser fake-bold it (mono headings and
+   numbers get brightness/size instead of weight; see globals.css callers of .label / font-mono). */
+.font-mono { font-synthesis: none; }
 
 .card {
   background: var(--color-card);
@@ -53,7 +57,7 @@ body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased; }
   box-shadow: 5px 5px 0 #1c1c1c;
 }
 
-.label { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.02em; color: var(--color-ink-2); }
+.label { font-family: var(--font-mono); font-synthesis: none; font-size: 12px; letter-spacing: 0.02em; color: var(--color-ink-2); }
 
 .panel {
   pointer-events: auto;
@@ -88,6 +92,7 @@ body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased; }
   position: absolute;
   pointer-events: auto;
   font-family: var(--font-mono);
+  font-synthesis: none;
   font-size: 12px;
   line-height: 14px;
   padding: 2px 6px;

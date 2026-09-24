@@ -25,14 +25,14 @@ export const PANEL_CONTENT: Record<PanelId, (c: PanelCtx) => React.ReactNode> = 
   ),
   history: (c) => (
     <div>
-      <h3 className="font-mono text-[15px] text-ink">{c.ts.data ? chartTitle(c.ts.data) : "Objects in orbit by type"}</h3>
-      <p className="mt-1 text-[12px] leading-snug text-ink-2">Objects in orbit at the end of each year.</p>
+      <h3 className="font-mono text-[16px] text-ink">{c.ts.data ? chartTitle(c.ts.data) : "Objects in orbit by type"}</h3>
+      <p className="mt-1 text-[13px] leading-snug text-ink-2">Objects in orbit at the end of each year.</p>
       <div className="mt-2">{c.ts.error ? <Unavailable what="yearly history" /> : c.ts.data && <LineChart data={c.ts.data} />}</div>
     </div>
   ),
   owners: (c) => (
     <div>
-      <h3 className="font-mono text-[15px] text-ink">Who owns what&apos;s up there</h3>
+      <h3 className="font-mono text-[16px] text-ink">Who owns what&apos;s up there</h3>
       <div className="mt-2">{c.bars.error ? <Unavailable what="owners" /> : c.bars.data && <BarChart data={c.bars.data} owners={c.meta.data?.owners ?? []} />}</div>
     </div>
   ),

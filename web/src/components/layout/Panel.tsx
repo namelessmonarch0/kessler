@@ -10,7 +10,7 @@ export function Panel({ id, title, children, className = "" }: { id: PanelId; ti
   return (
     <section className={`panel ${className}`} aria-label={title} data-panel={id}>
       <header className="mb-2 flex items-center justify-between gap-3">
-        <h2 className="font-mono text-[14px] text-ink">{title}</h2>
+        <h2 className="font-mono text-[15px] text-ink">{title}</h2>
         <button type="button" onClick={() => setPanel(id, false)} aria-label={`Hide ${title}`} className="px-1 text-[16px] leading-none text-ink-2 hover:text-ink">×</button>
       </header>
       {children}

@@ -40,6 +40,15 @@ export function yTicks(max: number): number[] {
  */
 export const CHAR_W = (350 / 550) * 12;
 
+/**
+ * Owner-name column in the bar chart (see labelColumn below) renders in Inter Tight SemiBold
+ * (600) at 13px, not Departure Mono — a proportional, bolder face has no single exact advance
+ * width, so this is a deliberately generous per-character estimate (wider than a typical
+ * lowercase-heavy average) that errs toward reserving more room rather than clipping a label;
+ * LABEL_RESERVE below adds further slack for real (kerning-affected) rendering.
+ */
+const OWNER_CHAR_W = 8;
+
 const ANNOTATION_ROWS = 4;
 const ANNOTATION_GAP = 8;
 
@@ -103,9 +112,9 @@ const LABEL_CHECK_RESERVE = LABEL_RESERVE - 4;
 
 export function labelColumn(labels: string[], width: number): { marginLeft: number; display: string[] } {
   const longest = Math.max(0, ...labels.map((l) => l.length));
-  const marginLeft = Math.min(Math.ceil(longest * CHAR_W) + LABEL_RESERVE, Math.round(width * 0.38));
+  const marginLeft = Math.min(Math.ceil(longest * OWNER_CHAR_W) + LABEL_RESERVE, Math.round(width * 0.38));
   const avail = Math.max(0, marginLeft - LABEL_CHECK_RESERVE);
-  const maxChars = Math.max(1, Math.floor(avail / CHAR_W));
+  const maxChars = Math.max(1, Math.floor(avail / OWNER_CHAR_W));
   const display = labels.map((l) => (l.length <= maxChars ? l : `${l.slice(0, Math.max(0, maxChars - 1))}…`));
   return { marginLeft, display };
 }
