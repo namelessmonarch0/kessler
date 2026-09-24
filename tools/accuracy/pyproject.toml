@@ -1,0 +1,29 @@
+[project]
+name = "accuracy"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "numpy>=2",
+    "sgp4>=2.23",
+    "skyfield>=1.49",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "ruff>=0.6",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]

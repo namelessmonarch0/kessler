@@ -5,6 +5,8 @@ node_modules/
 !.env.example
 __pycache__/
 .venv/
+.pytest_cache/
+.ruff_cache/
 api/.snapshots/
 api/.env
 web/node_modules/
