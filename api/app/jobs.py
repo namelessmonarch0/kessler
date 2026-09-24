@@ -5,11 +5,11 @@ from contextlib import ExitStack
 
 import httpx
 
-from app.config import Settings
+from app.config import Settings, load_settings, make_store
 from app.db import connect
 from app.ingest.gp import run_ingest_gp
 from app.ingest.satcat import run_ingest_satcat
-from app.ingest.snapshot import LocalSnapshotStore, SnapshotStore
+from app.ingest.snapshot import SnapshotStore
 from app.ingest.sources import USER_AGENT, CelesTrakClient, SpaceTrackClient
 from app.stats.rebuild import run_rebuild_stats
 
@@ -25,7 +25,7 @@ def run_job(
 ) -> dict[str, int]:
     if name not in JOBS:
         raise ValueError(f"unknown job {name!r}; expected one of {', '.join(JOBS)}")
-    store = store or LocalSnapshotStore(settings.snapshot_dir)
+    store = store or make_store(settings)
     with ExitStack() as stack:
         if http is None:
             http = stack.enter_context(
@@ -56,7 +56,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("job", choices=JOBS)
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-    print(json.dumps(run_job(args.job, Settings())))
+    print(json.dumps(run_job(args.job, load_settings())))
 
 
 if __name__ == "__main__":
