@@ -111,8 +111,21 @@ def test_archive_gp_writes_one_file_for_the_run(catalog, store):
 
 def test_archive_gp_writes_an_empty_file_when_nothing_is_new(catalog, store):
     store_epoch(catalog, 25544, ISS_EPOCH)
+    earlier_at = datetime(2026, 9, 24, 12, 41, tzinfo=UTC)
+    store.put(archive_key(earlier_at, "spacetrack", 1), encode_records([]))  # not a baseline run
     run_at = datetime(2026, 9, 25, 12, 41, tzinfo=UTC)
     items = [omm("25544", "2026-09-22T06:30:37.496448")]
     assert archive_gp(catalog, store, items, source="spacetrack", run_at=run_at, run_id=4) == 0
-    [key] = store.keys("history/")
+    key = archive_key(run_at, "spacetrack", 4)
     assert decode_records(store.get(key)) == []
+
+
+def test_baseline_run_archives_every_well_formed_record_despite_gp_elements(catalog, store):
+    # The archive is empty (a fresh deploy) but gp_elements is already populated, so the normal
+    # "epoch later than stored" rule would otherwise miss every unchanged object.
+    store_epoch(catalog, 25544, ISS_EPOCH)
+    run_at = datetime(2026, 9, 25, 6, 41, 12, tzinfo=UTC)
+    items = [omm("25544", "2026-09-22T06:30:37.496448"), {"NORAD_CAT_ID": "25544"}]  # same epoch
+    assert archive_gp(catalog, store, items, source="spacetrack", run_at=run_at, run_id=1) == 1
+    [key] = store.keys("history/")
+    assert decode_records(store.get(key)) == [items[0]]

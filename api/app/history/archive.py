@@ -49,13 +49,20 @@ def element_set_id(item: Mapping) -> tuple[int, datetime] | None:
         return None
 
 
-def select_new_records(conn: psycopg.Connection, items: Iterable[Mapping]) -> list[Mapping]:
+def select_new_records(
+    conn: psycopg.Connection, items: Iterable[Mapping], *, baseline: bool = False
+) -> list[Mapping]:
     """Raw records whose epoch is later than the one stored in gp_elements for their NORAD ID, or
-    whose ID has no stored row (including IDs unknown to the catalogue)."""
-    stored = {
-        r["norad_id"]: r["epoch"]
-        for r in conn.execute("SELECT norad_id, epoch FROM gp_elements").fetchall()
-    }
+    whose ID has no stored row (including IDs unknown to the catalogue).
+
+    When `baseline` is set (the archive holds no files yet), gp_elements is not consulted and
+    every well-formed record counts as new; malformed records are still skipped and counted."""
+    stored: Mapping[int, datetime] = {}
+    if not baseline:
+        stored = {
+            r["norad_id"]: r["epoch"]
+            for r in conn.execute("SELECT norad_id, epoch FROM gp_elements").fetchall()
+        }
     new: list[Mapping] = []
     malformed = 0
     for item in items:
@@ -83,6 +90,9 @@ def archive_gp(
 ) -> int:
     """Writes this run's new element sets (an empty file when there are
     none) and returns how many."""
-    new = select_new_records(conn, items)
+    baseline = not store.keys(HISTORY_PREFIX)
+    new = select_new_records(conn, items, baseline=baseline)
+    if baseline:
+        log.info("history archive is empty: archiving a baseline of %d element sets", len(new))
     store.put(archive_key(run_at, source, run_id), encode_records(new))
     return len(new)

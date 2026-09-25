@@ -248,6 +248,30 @@ def test_first_run_archives_every_record_as_received(catalog, store):
     assert decode_records(store.get(key)) == ST_SAMPLE
 
 
+def test_baseline_run_after_deploy_archives_every_unchanged_record(catalog, tmp_path):
+    # Simulates the production situation: gp_elements is already populated (like the pre-deploy
+    # site) but the history archive itself is empty (a fresh deploy of this feature). The run
+    # must archive every well-formed record, not just the ones whose epoch changed.
+    before_store = LocalSnapshotStore(tmp_path / "before")
+    run_ingest_gp(
+        catalog, spacetrack=FakeSpaceTrack(ST_SAMPLE), celestrak=FakeCelesTrakGp(SAMPLE),
+        store=before_store, settings=SETTINGS, now=NOW,
+    )
+    after_store = LocalSnapshotStore(tmp_path / "after")
+    result = run_ingest_gp(
+        catalog, spacetrack=FakeSpaceTrack(ST_SAMPLE), celestrak=FakeCelesTrakGp(SAMPLE),
+        store=after_store, settings=SETTINGS, now=NOW + timedelta(hours=6),
+    )
+    assert result.archived == 4
+    third = run_ingest_gp(
+        catalog, spacetrack=FakeSpaceTrack(NEWER_ISS), celestrak=FakeCelesTrakGp(SAMPLE),
+        store=after_store, settings=SETTINGS, now=NOW + timedelta(hours=12),
+    )
+    assert third.archived == 2
+    records = decode_records(after_store.get(archive_files(after_store)[-1]))
+    assert [r["NORAD_CAT_ID"] for r in records] == ["25544", "123456"]
+
+
 def test_later_runs_archive_only_new_element_sets(catalog, store):
     kw = dict(celestrak=FakeCelesTrakGp(SAMPLE), store=store, settings=SETTINGS)
     run_ingest_gp(catalog, spacetrack=FakeSpaceTrack(ST_SAMPLE), now=NOW, **kw)
