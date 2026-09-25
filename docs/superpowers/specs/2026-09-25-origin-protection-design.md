@@ -36,7 +36,7 @@ secret and queries the database; there is no function-level concurrency ceiling;
 ### Signing (`web/src/lib/proxy.ts`)
 
 - When `AWS_ROLE_ARN` is set, every upstream request is signed with SigV4 (service `lambda`, region from
-  `AWS_REGION`, default `us-east-2`) using `aws4fetch`, with credentials from
+  `API_ORIGIN_REGION`, default `us-east-2` — not `AWS_REGION`, which Vercel's runtime sets to its own region) using `aws4fetch`, with credentials from
   `@vercel/oidc-aws-credentials-provider` (`awsCredentialsProvider({ roleArn })`, which reads the function's OIDC
   token and caches credentials until expiry). Streaming responses pass through unchanged.
 - Without `AWS_ROLE_ARN` (local development and tests) requests are unsigned, as today.
@@ -47,7 +47,9 @@ secret and queries the database; there is no function-level concurrency ceiling;
 
 - `GET /api/health`: liveness only — `{"status": "ok"}`, no database access.
 - `GET /api/ready`: readiness — runs `SELECT 1` and returns `{"status": "ok", "gp_age_hours": …}` (moved from
-  health); 503 when the database is unavailable.
+  health); 503 when the database is unavailable. While the origin secret still exists (rollout steps 1–2) it is an
+  open path like `/api/health`, because the signed smoke test carries no secret; from step 2 AWS blocks unsigned
+  callers anyway, and step 3 removes the secret middleware entirely.
 
 ### Smoke test (`.github/workflows/deploy.yml`)
 
@@ -73,7 +75,8 @@ handled).
 
 1. Trust role, deploy-role URL permissions, signing proxy, health/ready split, proxy refusal of `/api/ready`,
    concurrency 10, smoke test (signed checks) — with `api_url_auth = NONE`. Owner confirms Vercel issuer mode is
-   **Team** and sets `AWS_ROLE_ARN` (from the `VercelApiRoleArn` output) and `AWS_REGION=us-east-2` for production.
+   **Team** and `AWS_ROLE_ARN` (from the `VercelApiRoleArn` output) is set for production (no region variable
+   needed).
    Verify live: the site keeps working with `AWS_ROLE_ARN` set (a failed credential exchange would return 502, so a
    working site proves the OIDC → STS exchange and signing run). AWS only validates signatures once the URL is
    `AWS_IAM`, so a signature AWS would reject surfaces at step 2 — hence step 2's one-line rollback. Rollback:
