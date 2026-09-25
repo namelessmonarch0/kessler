@@ -10,12 +10,13 @@ ENV = Environment(account="111111111111", region="us-east-2")
 
 @pytest.fixture
 def app_template():
-    def build(reserved: int = 10) -> Template:
+    def build(reserved: int = 10, url_auth: str = "NONE") -> Template:
         from kessler_infra.app_stack import KesslerAppStack
 
         app = App()
         stack = KesslerAppStack(app, "KesslerApp", env=ENV, image_tag="abc123",
-                            alert_email="owner@example.com", api_reserved_concurrency=reserved)
+                            alert_email="owner@example.com", api_reserved_concurrency=reserved,
+                            api_url_auth=url_auth)
         return Template.from_stack(stack)
 
     return build

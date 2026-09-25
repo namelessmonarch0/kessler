@@ -19,8 +19,11 @@ REPO_NAME = "kessler-api"
 
 class KesslerAppStack(Stack):
     def __init__(self, scope: Construct, construct_id: str, *, image_tag: str,
-                 alert_email: str, api_reserved_concurrency: int, **kwargs) -> None:
+                 alert_email: str, api_reserved_concurrency: int,
+                 api_url_auth: str = "NONE", **kwargs) -> None:
         super().__init__(scope, construct_id, **kwargs)
+        if api_url_auth not in ("NONE", "AWS_IAM"):
+            raise ValueError(f"api_url_auth must be NONE or AWS_IAM, not {api_url_auth!r}")
         self.alert_email = alert_email
         repo = ecr.Repository.from_repository_name(self, "Repo", REPO_NAME)
 
@@ -58,10 +61,51 @@ class KesslerAppStack(Stack):
         self.bucket.grant_read(self.api_fn)
         self.api_fn.add_to_role_policy(ssm_read)
         url = self.api_fn.add_function_url(
-            auth_type=lambda_.FunctionUrlAuthType.NONE,
+            auth_type=(lambda_.FunctionUrlAuthType.AWS_IAM if api_url_auth == "AWS_IAM"
+                       else lambda_.FunctionUrlAuthType.NONE),
             invoke_mode=lambda_.InvokeMode.RESPONSE_STREAM,
         )
         self.api_url = url.url
+
+        # --- origin protection: only Vercel production (via OIDC) and the deploy workflow may
+        # call the API URL (spec 2026-09-25-origin-protection). Enforced once api_url_auth is
+        # AWS_IAM. ---
+        vercel_issuer = "oidc.vercel.com/kudayyurter"
+        vercel_oidc = iam.OidcProviderNative(
+            self, "VercelOidc", url=f"https://{vercel_issuer}",
+            client_ids=["https://vercel.com/kudayyurter"],
+        )
+        vercel_role = iam.Role(
+            self, "VercelApiRole", role_name="kessler-vercel-api",
+            assumed_by=iam.WebIdentityPrincipal(vercel_oidc.oidc_provider_arn, conditions={
+                "StringEquals": {
+                    f"{vercel_issuer}:aud": "https://vercel.com/kudayyurter",
+                    f"{vercel_issuer}:sub":
+                        "owner:kudayyurter:project:kessler:environment:production",
+                },
+            }),
+            max_session_duration=Duration.hours(1),
+        )
+        vercel_role.add_to_policy(iam.PolicyStatement(
+            actions=["lambda:InvokeFunctionUrl"], resources=[self.api_fn.function_arn],
+            conditions={"StringEquals": {"lambda:FunctionUrlAuthType": "AWS_IAM"}},
+        ))
+        vercel_role.add_to_policy(iam.PolicyStatement(
+            actions=["lambda:InvokeFunction"], resources=[self.api_fn.function_arn],
+            conditions={"Bool": {"lambda:InvokedViaFunctionUrl": "true"}},
+        ))
+        deploy_role = iam.ArnPrincipal(f"arn:aws:iam::{self.account}:role/kessler-github-deploy")
+        lambda_.CfnPermission(
+            self, "DeployRoleInvokeUrl", action="lambda:InvokeFunctionUrl",
+            function_name=self.api_fn.function_arn, principal=deploy_role.arn,
+            function_url_auth_type="AWS_IAM",
+        )
+        deploy_via_url_perm = lambda_.CfnPermission(
+            self, "DeployRoleInvokeViaUrl", action="lambda:InvokeFunction",
+            function_name=self.api_fn.function_arn, principal=deploy_role.arn,
+        )
+        # set via property override, not the invoked_via_function_url kwarg (see task report)
+        deploy_via_url_perm.add_property_override("InvokedViaFunctionUrl", True)
 
         self.jobs_fn = lambda_.DockerImageFunction(
             self, "JobsFunction",
@@ -169,3 +213,4 @@ class KesslerAppStack(Stack):
 
         CfnOutput(self, "ApiFunctionUrl", value=url.url)
         CfnOutput(self, "SnapshotBucketName", value=self.bucket.bucket_name)
+        CfnOutput(self, "VercelApiRoleArn", value=vercel_role.role_arn)

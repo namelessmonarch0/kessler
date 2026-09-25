@@ -1,7 +1,8 @@
 {
   "app": "uv run python app.py",
   "context": {
-    "api_reserved_concurrency": 0,
+    "api_reserved_concurrency": 10,
+    "api_url_auth": "NONE",
     "github_repo": "namelessmonarch0/kessler",
     "github_subject_prefix": "repo:namelessmonarch0@186356630/kessler@1304217297"
   }

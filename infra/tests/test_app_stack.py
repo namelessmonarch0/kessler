@@ -1,5 +1,7 @@
 import json
+from pathlib import Path
 
+import pytest
 from aws_cdk.assertions import Match
 
 
@@ -42,7 +44,7 @@ def test_images_come_from_leo_api_repo_by_tag(app_template):
     assert "jobs-abc123" in jobs_uri
 
 
-def test_only_api_has_public_streaming_url(app_template):
+def test_only_api_has_a_streaming_url_public_until_iam_is_enabled(app_template):
     t = app_template()
     t.resource_count_is("AWS::Lambda::Url", 1)
     t.has_resource_properties("AWS::Lambda::Url", {"AuthType": "NONE",
@@ -50,6 +52,19 @@ def test_only_api_has_public_streaming_url(app_template):
     t.has_resource_properties("AWS::Lambda::Permission", {
         "Action": "lambda:InvokeFunction", "Principal": "*", "InvokedViaFunctionUrl": True})
     t.has_output("ApiFunctionUrl", {})
+
+
+def test_iam_url_has_no_public_permission(app_template):
+    t = app_template(url_auth="AWS_IAM")
+    t.has_resource_properties("AWS::Lambda::Url", {"AuthType": "AWS_IAM",
+                                                   "InvokeMode": "RESPONSE_STREAM"})
+    public = t.find_resources("AWS::Lambda::Permission", {"Properties": {"Principal": "*"}})
+    assert public == {}
+
+
+def test_unknown_url_auth_is_rejected(app_template):
+    with pytest.raises(ValueError, match="api_url_auth"):
+        app_template(url_auth="OPEN")
 
 
 def test_log_groups_keep_14_days(app_template):
@@ -206,3 +221,65 @@ def test_agent_user_scopes_invoke_and_logs_to_kessler(app_template):
 def test_agent_user_has_no_access_key_in_the_template(app_template):
     # The owner creates the key by hand; a key in CloudFormation would leak the secret.
     app_template().resource_count_is("AWS::IAM::AccessKey", 0)
+
+
+VERCEL = "oidc.vercel.com/kudayyurter"
+
+
+def _role_by_name(template, name):
+    roles = template.find_resources("AWS::IAM::Role", {"Properties": {"RoleName": name}})
+    assert len(roles) == 1, f"expected exactly one role {name}"
+    return next(iter(roles.items()))
+
+
+def test_vercel_oidc_provider(app_template):
+    app_template().has_resource_properties("AWS::IAM::OIDCProvider", {
+        "Url": f"https://{VERCEL}", "ClientIdList": ["https://vercel.com/kudayyurter"]})
+
+
+def test_vercel_role_trusts_only_production_of_this_project(app_template):
+    _, role = _role_by_name(app_template(), "kessler-vercel-api")
+    (statement,) = role["Properties"]["AssumeRolePolicyDocument"]["Statement"]
+    assert statement["Action"] == "sts:AssumeRoleWithWebIdentity"
+    assert statement["Condition"] == {"StringEquals": {
+        f"{VERCEL}:aud": "https://vercel.com/kudayyurter",
+        f"{VERCEL}:sub": "owner:kudayyurter:project:kessler:environment:production",
+    }}
+
+
+def test_vercel_role_may_only_invoke_the_api_through_its_url(app_template):
+    t = app_template()
+    logical_id, _ = _role_by_name(t, "kessler-vercel-api")
+    policies = [p for p in t.find_resources("AWS::IAM::Policy").values()
+                if {"Ref": logical_id} in p["Properties"].get("Roles", [])]
+    (policy,) = policies
+    statements = policy["Properties"]["PolicyDocument"]["Statement"]
+    by_action = {s["Action"]: s for s in statements}
+    assert set(by_action) == {"lambda:InvokeFunctionUrl", "lambda:InvokeFunction"}
+    assert by_action["lambda:InvokeFunctionUrl"]["Condition"] == {
+        "StringEquals": {"lambda:FunctionUrlAuthType": "AWS_IAM"}}
+    assert by_action["lambda:InvokeFunction"]["Condition"] == {
+        "Bool": {"lambda:InvokedViaFunctionUrl": "true"}}
+    for s in statements:
+        resource = json.dumps(s["Resource"])
+        assert "ApiFunction" in resource and "JobsFunction" not in resource
+    t.has_output("VercelApiRoleArn", {})
+
+
+def test_deploy_role_may_call_the_api_url_for_smoke_tests(app_template):
+    t = app_template()
+    grants = [p["Properties"] for p in t.find_resources("AWS::Lambda::Permission").values()
+              if "kessler-github-deploy" in json.dumps(p["Properties"]["Principal"])]
+    assert {g["Action"] for g in grants} == {"lambda:InvokeFunctionUrl", "lambda:InvokeFunction"}
+    url_grant = next(g for g in grants if g["Action"] == "lambda:InvokeFunctionUrl")
+    via_grant = next(g for g in grants if g["Action"] == "lambda:InvokeFunction")
+    assert url_grant["FunctionUrlAuthType"] == "AWS_IAM"
+    assert via_grant["InvokedViaFunctionUrl"] is True
+    for g in grants:
+        assert "ApiFunction" in json.dumps(g["FunctionName"])
+
+
+def test_cdk_json_caps_api_concurrency_and_starts_with_an_open_url():
+    context = json.loads((Path(__file__).parents[1] / "cdk.json").read_text())["context"]
+    assert context["api_reserved_concurrency"] == 10
+    assert context["api_url_auth"] == "NONE"

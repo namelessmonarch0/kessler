@@ -25,6 +25,7 @@ KesslerCiStack(app, "KesslerCi", env=env,
 image_tag, alert_email = ctx("image_tag"), ctx("alert_email")
 if image_tag and alert_email:
     KesslerAppStack(app, "KesslerApp", env=env, image_tag=image_tag, alert_email=alert_email,
-                api_reserved_concurrency=int(ctx("api_reserved_concurrency") or 10))
+                api_reserved_concurrency=int(ctx("api_reserved_concurrency") or 10),
+                api_url_auth=ctx("api_url_auth") or "NONE")
 
 app.synth()
