@@ -61,10 +61,20 @@ export interface BreakdownQuery {
   top?: number;
 }
 
+type GlobeGroup = "LEO" | "HIGH";
+
+/** A globe file from `generation`, or from the current generation if that one has been deleted
+ * (a page reads the pointer once, and old generations are removed after a while). */
+async function fetchGlobeFile(path: string, group: GlobeGroup, generation?: string): Promise<Response> {
+  const res = await fetch(`/api${path}${buildQuery({ group, gen: generation })}`);
+  if (res.status !== 404 || generation === undefined) return res;
+  return fetch(`/api${path}${buildQuery({ group })}`);
+}
+
 export interface GlobeCurrent {
   generation: string;
   generated_at: string;
-  groups: Record<"LEO" | "HIGH", { count: number }>;
+  groups: Record<GlobeGroup, { count: number }>;
 }
 
 export const api = {
@@ -81,10 +91,13 @@ export const api = {
     if (!res.ok) throw await toError(res);
     return (await res.json()) as GlobeCurrent;
   },
-  names: async (group: "LEO" | "HIGH", generation?: string) =>
-    (await getJson<{ generated_at: string | null; names: Record<string, string> }>(`/globe/names${buildQuery({ group, gen: generation })}`)).names,
-  async snapshot(group: "LEO" | "HIGH", generation?: string): Promise<Uint8Array | null> {
-    const res = await fetch(`/api/globe/snapshot${buildQuery({ group, gen: generation })}`);
+  async names(group: GlobeGroup, generation?: string): Promise<Record<string, string>> {
+    const res = await fetchGlobeFile("/globe/names", group, generation);
+    if (!res.ok) throw await toError(res);
+    return ((await res.json()) as { generated_at: string | null; names: Record<string, string> }).names;
+  },
+  async snapshot(group: GlobeGroup, generation?: string): Promise<Uint8Array | null> {
+    const res = await fetchGlobeFile("/globe/snapshot", group, generation);
     if (res.status === 404) return null;
     if (!res.ok) throw await toError(res);
     return new Uint8Array(await res.arrayBuffer());

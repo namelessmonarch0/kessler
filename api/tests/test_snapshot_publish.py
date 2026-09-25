@@ -12,6 +12,7 @@ from app.ingest.snapshot import (
     generation_key,
     publish_generation,
     read_pointer,
+    remove_old_generations,
     snapshot_key,
     unpack_snapshot,
 )
@@ -23,6 +24,10 @@ FILES = ("LEO.bin.gz", "HIGH.bin.gz", "names-LEO.json.gz", "names-HIGH.json.gz")
 
 def names(store, gen, group):
     return json.loads(gzip.decompress(store.get(generation_key(gen, f"names-{group}.json.gz"))))
+
+
+def gen_hours_before(current: datetime, hours: int, run: int) -> str:
+    return generation_id(current - timedelta(hours=hours), run)
 
 
 class FailingStore(LocalSnapshotStore):
@@ -68,7 +73,7 @@ def test_a_failed_file_leaves_the_previous_generation_live(world, tmp_path, fail
     assert len(good.keys("globe/gen/20260925T064112Z-r1/")) == 4  # previous generation intact
 
 
-def test_a_partial_orphan_generation_is_deleted_by_a_later_publication(world, tmp_path):
+def test_a_partial_orphan_generation_is_deleted_once_past_the_retention(world, tmp_path):
     add_gp(world, 1, 4)
     good = LocalSnapshotStore(tmp_path)
     publish_generation(world, good, T0, 1)
@@ -81,10 +86,10 @@ def test_a_partial_orphan_generation_is_deleted_by_a_later_publication(world, tm
     assert sorted(good.keys(f"globe/gen/{b}/")) == [
         generation_key(b, "LEO.bin.gz"), generation_key(b, "names-LEO.json.gz"),
     ]
-    publish_generation(world, good, T0 + timedelta(hours=12), 3)
-    c = "20260925T184112Z-r3"
+    publish_generation(world, good, T0 + timedelta(hours=60), 3)
+    c = "20260927T184112Z-r3"
     gens = {k.split("/")[2] for k in good.keys("globe/gen/")}
-    assert gens == {a, c}  # a kept as the previously live one, orphan b removed
+    assert gens == {a, c}  # a kept as the previously live one, orphan b (54 h older) removed
     assert read_pointer(good)["generation"] == c
 
 
@@ -95,22 +100,49 @@ def test_a_stray_key_under_globe_gen_that_is_not_a_generation_survives_cleanup(w
     assert store.get("globe/gen/not-a-generation/x") == b"stray"
 
 
-def test_cleanup_keeps_current_previous_and_newer_and_drops_legacy_files(world, store):
+def test_cleanup_keeps_current_previous_and_newer_and_leaves_legacy_files(world, store):
     add_gp(world, 1, 4)
     store.put(snapshot_key("LEO"), b"legacy")
     store.put(snapshot_key("HIGH"), b"legacy")
     store.put(generation_key("20990101T000000Z-r999", "LEO.bin.gz"), b"from the future")
-    for hours, run in ((0, 1), (6, 2), (12, 3)):
+    for hours, run in ((0, 1), (50, 2), (56, 3)):
         publish_generation(world, store, T0 + timedelta(hours=hours), run)
     gens = {k.split("/")[2] for k in store.keys("globe/gen/")}
-    assert gens == {"20260925T184112Z-r3", "20260925T124112Z-r2", "20990101T000000Z-r999"}
-    assert store.get(snapshot_key("LEO")) is None and store.get(snapshot_key("HIGH")) is None
+    assert gens == {"20260927T144112Z-r3", "20260927T084112Z-r2", "20990101T000000Z-r999"}
+    # Left in place (stale but readable) so reverting the API still shows a globe.
+    assert [store.get(snapshot_key(g)) for g in ("LEO", "HIGH")] == [b"legacy", b"legacy"]
+
+
+@pytest.mark.parametrize("previous_age", [6, 50])
+def test_cleanup_keeps_every_generation_published_within_48_hours(store, previous_age):
+    current = generation_id(T0, 4)
+    old = {age: gen_hours_before(T0, age, run) for run, age in ((1, 50), (2, 30), (3, 6))}
+    for gen in (*old.values(), current):
+        store.put(generation_key(gen, "LEO.bin.gz"), b"x")
+    remove_old_generations(store, current, old[previous_age])
+    gens = {k.split("/")[2] for k in store.keys("globe/gen/")}
+    kept = {current, old[30], old[6]} | ({old[50]} if previous_age == 50 else set())
+    assert gens == kept  # the 50 h one goes, unless it was live just before this publication
+
+
+def test_an_empty_database_publishes_nothing(world, store, caplog):
+    with caplog.at_level(logging.WARNING):
+        assert publish_generation(world, store, T0, 1) == {"LEO": 0, "HIGH": 0}
+    assert store.keys("globe/") == [] and read_pointer(store) is None
+    assert "nothing to publish" in caplog.text
+    add_gp(world, 1, 4)
+    publish_generation(world, store, T0 + timedelta(hours=6), 2)
+    world.execute("DELETE FROM gp_elements")
+    assert publish_generation(world, store, T0 + timedelta(hours=12), 3) == {"LEO": 0, "HIGH": 0}
+    assert read_pointer(store)["generation"] == "20260925T124112Z-r2"  # the globe stays up
+    assert {k.split("/")[2] for k in store.keys("globe/gen/")} == {"20260925T124112Z-r2"}
 
 
 def test_cleanup_failure_does_not_fail_the_publication(world, tmp_path, caplog, monkeypatch):
     add_gp(world, 1, 4)
     store = LocalSnapshotStore(tmp_path)
     publish_generation(world, store, T0, 1)
+    store.put(generation_key(gen_hours_before(T0, 72, 9), "LEO.bin.gz"), b"old")  # to delete
 
     def broken_delete(key):
         raise OSError("delete denied")

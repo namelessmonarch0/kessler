@@ -3,7 +3,7 @@ import json
 import logging
 import re
 import struct
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Protocol
 
@@ -62,18 +62,29 @@ class LocalSnapshotStore:
 
 
 def snapshot_key(group: str) -> str:
-    """Legacy single-file snapshot, served only until the first generation is published."""
+    """Legacy single-file snapshot, served only until the first generation is published. This code
+    neither writes nor deletes it: left in place, it stays readable if the API is rolled back."""
     return f"globe/{group}.bin.gz"
 
 
 POINTER_KEY = "globe/current.json"
 GENERATIONS_PREFIX = "globe/gen/"
-GENERATION_PATTERN = r"^\d{8}T\d{6}Z-r\d+$"
+GENERATION_PATTERN = r"^[0-9]{8}T[0-9]{6}Z-r[0-9]+$"
+# A page reads the pointer once and fetches HIGH and names from that generation much later.
+GENERATION_RETENTION = timedelta(hours=48)
 
 
 def generation_id(generated_at: datetime, run_id: int) -> str:
     t = generated_at.astimezone(UTC)
     return f"{t:%Y%m%dT%H%M%S}Z-r{run_id}"
+
+
+def generation_time(generation: str) -> datetime | None:
+    """When a generation was published, from its id; None if the id holds no valid time."""
+    try:
+        return datetime.strptime(generation.split("-r", 1)[0], "%Y%m%dT%H%M%SZ").replace(tzinfo=UTC)
+    except ValueError:
+        return None
 
 
 def generation_key(generation: str, filename: str) -> str:
@@ -150,7 +161,8 @@ def publish_generation(
 ) -> dict[str, int]:
     """Publishes the globe as one generation: both groups' snapshots and name lists, all read
     in one database snapshot, then the pointer switch. A failure before the switch leaves the
-    previous generation live. Returns the object count per group."""
+    previous generation live. With no element sets at all it writes nothing, so an empty database
+    never replaces a live globe. Returns the object count per group."""
     generation = generation_id(generated_at, run_id)
     previous_pointer = read_pointer(store)
     previous = previous_pointer["generation"] if previous_pointer else None
@@ -160,6 +172,9 @@ def publish_generation(
             group: conn.execute(GROUP_ROWS_SQL, (list(regimes),)).fetchall()
             for group, regimes in SNAPSHOT_GROUPS.items()
         }
+    if not any(groups.values()):  # e.g. a new environment's deploy, before any GP ingest
+        log.warning("nothing to publish: no element sets in the database; the globe is unchanged")
+        return {group: 0 for group in groups}
     for group, rows in groups.items():
         snapshot_data = pack_snapshot(rows, generated_at)
         store.put(generation_key(generation, snapshot_file(group)), snapshot_data)
@@ -178,22 +193,25 @@ def publish_generation(
 
 
 def remove_old_generations(store: SnapshotStore, current: str, previous: str | None) -> None:
-    """Deletes every generation under `globe/gen/` except `current`, `previous` (the generation
-    the pointer named just before this publication, kept for clients mid-load), and any
-    generation newer than `current` (never touched). This also removes orphan generations that
-    were written but never reached by the pointer, such as one left behind by a failed
-    publication. A folder name under `globe/gen/` that does not match GENERATION_PATTERN is left
-    alone. The legacy single-file snapshots are always deleted."""
-    keys = store.keys(GENERATIONS_PREFIX)
-    generation_of = {k: k[len(GENERATIONS_PREFIX):].split("/", 1)[0] for k in keys}
+    """Deletes old generations under `globe/gen/`. Kept: `current`; `previous` (the generation the
+    pointer named just before this publication); any generation newer than `current` (never
+    touched); and any generation published within GENERATION_RETENTION of `current`, so a page
+    that read an older pointer can still load HIGH and names from its generation. Everything else
+    goes, including orphan generations that were written but never reached by the pointer, such as
+    one left behind by a failed publication. A folder name under `globe/gen/` that is not a
+    generation id (GENERATION_PATTERN, with a valid time) is left alone. The legacy single-file
+    snapshots are left in place in this release: stale, but readable if the API is rolled back."""
+    oldest_kept = generation_time(current) - GENERATION_RETENTION
     keep = {current, *([previous] if previous is not None else [])}
-    for key, generation in generation_of.items():
+    for key in store.keys(GENERATIONS_PREFIX):
+        generation = key[len(GENERATIONS_PREFIX):].split("/", 1)[0]
         if not re.fullmatch(GENERATION_PATTERN, generation):
             continue
-        if generation not in keep and generation < current:
+        published = generation_time(generation)
+        if published is None or generation in keep or generation > current:
+            continue
+        if published < oldest_kept:
             store.delete(key)
-    for group in SNAPSHOT_GROUPS:
-        store.delete(snapshot_key(group))
 
 
 def run_publish_globe(

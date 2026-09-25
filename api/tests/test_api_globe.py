@@ -54,7 +54,10 @@ def test_unknown_generation_is_404(client, published):
     assert client.get(f"/api/globe/names?group=LEO&gen={other}").status_code == 404
 
 
-@pytest.mark.parametrize("bad", ["../current.json", "20260925T064112Z-r42/../x", "latest", ""])
+@pytest.mark.parametrize("bad", [
+    "../current.json", "20260925T064112Z-r42/../x", "latest", "",
+    "２０２６０９２５T064112Z-r42",  # fullwidth digits
+])
 def test_versioned_endpoints_reject_malformed_generations(client, published, bad):
     for path in ("snapshot", "names"):
         r = client.get(f"/api/globe/{path}", params={"group": "LEO", "gen": bad})

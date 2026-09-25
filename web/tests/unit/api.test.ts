@@ -71,6 +71,39 @@ describe("api", () => {
     expect((fn.mock.calls[0] as unknown[])[0]).toBe("/api/globe/current");
   });
 
+  describe("when a tab's generation has been deleted", () => {
+    const gen = "20260925T064112Z-r42";
+    const gone = () => Response.json({ error: { code: "not_found", message: "not found" } }, { status: 404 });
+    // 404 for any versioned URL; `current` answers the un-versioned one.
+    function stubGenerationGone(current: () => Response) {
+      const fn = vi.fn(async (url: string) => (url.includes("gen=") ? gone() : current()));
+      vi.stubGlobal("fetch", fn);
+      return fn;
+    }
+
+    it("loads the snapshot from the current generation instead", async () => {
+      const fn = stubGenerationGone(() => new Response(new Uint8Array([7, 8])));
+      expect(Array.from((await api.snapshot("HIGH", gen))!)).toEqual([7, 8]);
+      expect(fn.mock.calls.map((c) => c[0])).toEqual([`/api/globe/snapshot?group=HIGH&gen=${gen}`, "/api/globe/snapshot?group=HIGH"]);
+    });
+
+    it("loads the names from the current generation instead", async () => {
+      const fn = stubGenerationGone(() => Response.json({ generated_at: null, names: { "4": "GAMMA GEO" } }));
+      expect(await api.names("HIGH", gen)).toEqual({ "4": "GAMMA GEO" });
+      expect(fn.mock.calls.map((c) => c[0])).toEqual([`/api/globe/names?group=HIGH&gen=${gen}`, "/api/globe/names?group=HIGH"]);
+    });
+
+    it("retries once, and never an un-versioned request", async () => {
+      const fn = stubGenerationGone(gone);
+      expect(await api.snapshot("LEO", gen)).toBeNull();
+      expect(fn).toHaveBeenCalledTimes(2);
+      expect(await api.snapshot("LEO")).toBeNull();
+      expect(fn).toHaveBeenCalledTimes(3);
+      await expect(api.names("LEO", gen)).rejects.toMatchObject({ status: 404 });
+      expect(fn).toHaveBeenCalledTimes(5);
+    });
+  });
+
   it("addresses snapshots and names by generation when given one", async () => {
     const fn = stubFetch(new Response(new Uint8Array([1])));
     await api.snapshot("LEO", "20260925T064112Z-r42");
