@@ -73,10 +73,21 @@ jobs:
                 --user "$AWS_ACCESS_KEY_ID:$AWS_SECRET_ACCESS_KEY"
                 -H "x-amz-security-token: $AWS_SESSION_TOKEN")
           code() { curl -s -o /dev/null -w '%{http_code}' "$@"; }
-          test "$(code "${SIGN[@]}" "${URL}api/health")" = 200
-          test "$(code "${SIGN[@]}" "${URL}api/ready")" = 200
+          check() {  # check <want> <curl args…> <url>
+            local want=$1; shift
+            local how=unsigned; if [ "$1" = --aws-sigv4 ]; then how=signed; fi
+            local path=${*: -1}; path=${path#"$URL"}   # log the path, not the function URL
+            local got; got=$(code "$@") || true        # curl prints 000 when it can't connect
+            echo "$how $path -> $got (want $want)"
+            if [ "$got" != "$want" ]; then
+              echo "::error::smoke test: $how $path returned $got, expected $want"
+              return 1
+            fi
+          }
+          check 200 "${SIGN[@]}" "${URL}api/health"
+          check 200 "${SIGN[@]}" "${URL}api/ready"
           if [ "$AUTH" = "AWS_IAM" ]; then
-            test "$(code "${URL}api/health")" = 403     # AWS rejects unsigned requests
+            check 403 "${URL}api/health"     # AWS rejects unsigned requests
           else
-            test "$(code "${URL}api/meta")" = 403       # the origin secret still guards the app
+            check 403 "${URL}api/meta"       # the origin secret still guards the app
           fi

@@ -100,12 +100,11 @@ class KesslerAppStack(Stack):
             function_name=self.api_fn.function_arn, principal=deploy_role.arn,
             function_url_auth_type="AWS_IAM",
         )
-        deploy_via_url_perm = lambda_.CfnPermission(
+        lambda_.CfnPermission(
             self, "DeployRoleInvokeViaUrl", action="lambda:InvokeFunction",
             function_name=self.api_fn.function_arn, principal=deploy_role.arn,
+            invoked_via_function_url=True,
         )
-        # set via property override, not the invoked_via_function_url kwarg (see task report)
-        deploy_via_url_perm.add_property_override("InvokedViaFunctionUrl", True)
 
         self.jobs_fn = lambda_.DockerImageFunction(
             self, "JobsFunction",
