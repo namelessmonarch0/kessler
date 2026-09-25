@@ -340,18 +340,89 @@ Full design: `docs/superpowers/specs/2026-09-25-origin-protection-design.md`.
   ```
 
   `API_ORIGIN_REGION` is not needed — the proxy defaults to `us-east-2`.
-- Redeploy the site so the new environment variable takes effect (`vercel redeploy <production
-  URL> --prod`, or an empty push to `main`).
+- Redeploy production so the new variable takes effect — a running deployment keeps the
+  environment it was built with. Take the current production deployment's URL (the newest
+  **Ready** row, unless you have rolled back since) and redeploy it to production:
+
+  ```bash
+  cd web
+  npx vercel ls kessler --environment production --scope kudayyurter
+  npx vercel redeploy <current production deployment URL> --target production --scope kudayyurter
+  cd ..
+  ```
+
+  or the dashboard: **Deployments** → that deployment's **⋯** → **Redeploy**. Wait for the new
+  deployment to be **Ready**; if it ends **Canceled** by the Ignored Build Step, redeploy from the
+  dashboard with **Use project's Ignore Build Step** unchecked. (`redeploy` has no `--prod` flag.)
+  An empty push to `main` does not work: `web/vercel.json`'s `ignoreCommand` cancels every build
+  whose commits change nothing under `web/`.
 
 ### Rollout (three pushes)
 
 1. **This code, with `api_url_auth = NONE`.** Push to `main`; the deploy workflow's smoke test
    signs `/api/health` and `/api/ready` with the deploy role's credentials (both expect 200) and
-   still checks that the origin secret guards `/api/meta` (403 unsigned). Verify live: with
-   `AWS_ROLE_ARN` set (previous step), the site keeps loading data — a broken OIDC → STS exchange
-   or signing bug shows up as `502`s from `/api/*`, not silently. AWS doesn't validate signatures
-   yet (the URL is still `NONE`), so a bad signature only surfaces at step 2.
-   **Rollback:** unset `AWS_ROLE_ARN` in Vercel.
+   still checks that the origin secret guards `/api/meta` (403 unsigned). Then set `AWS_ROLE_ARN`
+   and redeploy (one-time setup above).
+
+   **Gate — do not start step 2 without this line.** A working site proves little yet: AWS
+   doesn't validate signatures while the URL is `NONE`. Load the site, then find this line in the
+   new production deployment's runtime logs (or the dashboard: the deployment → **Logs**):
+
+   ```
+   proxy: signing as arn:aws:iam::<account>:role/kessler-vercel-api, credentials expire <time>
+   ```
+
+   ```bash
+   cd web
+   npx vercel logs --deployment <new production deployment URL> --since 1h --expand \
+     --scope kudayyurter | grep "proxy: "
+   cd ..
+   ```
+
+   Each function instance logs it once per credential lifetime (an hour), on its first `/api/*`
+   request. If you see `proxy: signing failed: <error name>: <message>` instead, the message names
+   the cause. The two common ones:
+   - `InvalidIdentityTokenException` (e.g. "No OpenIDConnect provider found …"): the OIDC issuer
+     mode isn't **Team**, so the token's issuer isn't `https://oidc.vercel.com/kudayyurter`. Fix
+     it (one-time setup), then redeploy.
+   - `AccessDenied` ("Not authorized to perform sts:AssumeRoleWithWebIdentity"): the token doesn't
+     match the role's trust policy (`aud` `https://vercel.com/kudayyurter`, `sub`
+     `owner:kudayyurter:project:kessler:environment:production`) — a different team or project
+     name, or not a production deployment — or `AWS_ROLE_ARN` isn't the `VercelApiRoleArn`
+     output.
+
+   If neither line appears, the deployment you're reading was built without `AWS_ROLE_ARN`.
+
+   **Rollback:** Instant Rollback to the previous production deployment — the dashboard's
+   **Instant Rollback**, or `npx vercel rollback <previous production deployment URL>` (Hobby can
+   only roll back to the immediately previous one: the deployment from before the redeploy).
+   Unsetting `AWS_ROLE_ARN` alone changes nothing, since a running deployment keeps the
+   environment it was built with; after the rollback, remove it too (`npx vercel env rm
+   AWS_ROLE_ARN production`) so the next build doesn't pick it up. A rollback also turns off
+   auto-assignment of production domains: new pushes won't go live until you undo it (the
+   dashboard's **Undo Rollback**, or `npx vercel promote <deployment URL>`).
+
+   **Before step 2** (read-only, your admin login): check that the role may invoke `kessler-api`
+   through its URL — both actions must be `allowed`:
+
+   ```bash
+   ROLE=$(aws cloudformation describe-stacks --stack-name KesslerApp \
+     --query "Stacks[0].Outputs[?OutputKey=='VercelApiRoleArn'].OutputValue" --output text)
+   FN=$(aws lambda get-function --function-name kessler-api \
+     --query Configuration.FunctionArn --output text)
+   aws iam simulate-principal-policy --policy-source-arn "$ROLE" \
+     --action-names lambda:InvokeFunctionUrl lambda:InvokeFunction --resource-arns "$FN" \
+     --context-entries \
+       "ContextKeyName=lambda:FunctionUrlAuthType,ContextKeyValues=AWS_IAM,ContextKeyType=string" \
+       "ContextKeyName=lambda:InvokedViaFunctionUrl,ContextKeyValues=true,ContextKeyType=boolean" \
+     --query "EvaluationResults[].[EvalActionName,EvalDecision]" --output text
+   # lambda:InvokeFunctionUrl   allowed
+   # lambda:InvokeFunction      allowed
+   ```
+
+   Keep the time between steps 1 and 2 short: until step 2 the URL is still `NONE` and
+   `kessler-api` is capped at 10 concurrent executions, so unsigned callers who know the URL can
+   occupy those slots (`/api/health` and `/api/ready` need no origin secret).
 2. **Flip `api_url_auth` to `AWS_IAM`** in `infra/cdk.json`, commit, push. Verify immediately
    after the deploy: an unsigned request to the function URL now returns 403 from AWS — (`$URL`
    as fetched in step 7, ending in a trailing slash)
@@ -360,10 +431,32 @@ Full design: `docs/superpowers/specs/2026-09-25-origin-protection-design.md`.
    curl -s -o /dev/null -w '%{http_code}\n' "${URL}api/health"   # 403
    ```
 
-   — the site still loads data (a signing mismatch would show as 403s through the proxy), and the
-   smoke test's signed and unsigned checks both pass.
-   **Rollback:** set `api_url_auth` back to `NONE` and push (site data is unavailable for the few
-   minutes that deploy takes, at worst).
+   — and the site still loads data for every kind of query the proxy signs: both globe groups
+   (turn on **Higher orbits**), the charts with an **Owner** picked (their queries carry
+   comma-separated filters such as `types=PAY,DEB,R/B`), a search containing a space (e.g.
+   `ISS (ZARYA)`), and an object card (click an object). A signing mismatch shows as 403s from
+   `/api/*`, and as `proxy: upstream rejected a signed request: 403 …` in the runtime logs. The
+   smoke test's signed and unsigned checks must both pass.
+   **Rollback:** set `api_url_auth` back to `NONE` and push — but that deploy takes 10+ minutes,
+   with no site data meanwhile. Faster, with your admin login (seconds):
+
+   ```bash
+   aws lambda update-function-url-config --function-name kessler-api --auth-type NONE
+   aws lambda add-permission --function-name kessler-api --statement-id public-url \
+     --action lambda:InvokeFunctionUrl --principal "*" --function-url-auth-type NONE
+   aws lambda add-permission --function-name kessler-api --statement-id public-invoke \
+     --action lambda:InvokeFunction --principal "*" --invoked-via-function-url
+   ```
+
+   Then push `api_url_auth` = `NONE` anyway, so CloudFormation matches again (until then, any
+   deploy from `main` re-applies `AWS_IAM`). Once that deploy is green, CloudFormation has added
+   its own public permissions; remove the two hand-made ones, so a later emergency can add them
+   again:
+
+   ```bash
+   aws lambda remove-permission --function-name kessler-api --statement-id public-url
+   aws lambda remove-permission --function-name kessler-api --statement-id public-invoke
+   ```
 3. **Retire the origin secret; add the rate-limit rule.** Verify the site, the smoke test, and
    that the rule shows up in `vercel firewall rules list`.
    **Rollback:** remove the WAF rule (below); the secret removal itself needs no rollback once
