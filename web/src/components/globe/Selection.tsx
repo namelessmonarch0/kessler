@@ -7,7 +7,8 @@ import { simClock } from "@/lib/clock";
 import type { OrbitRecord } from "@/lib/snapshot";
 import type { PropagationFrames, RequestPath } from "@/components/globe/usePropagation";
 import { interpolate } from "@/components/globe/instances";
-import { buildObjectGeometry, frameAlpha, setVisibility } from "@/components/globe/objectPoints";
+import { artScale, buildObjectGeometry, frameAlpha, selectionScale, setVisibility } from "@/components/globe/objectPoints";
+import { earthRadiusPx } from "@/lib/camera";
 import { createObjectMaterial, updateObjectUniforms } from "@/components/globe/objectMaterial";
 import { spriteKind } from "@/components/globe/objectSprites";
 import { kindColour } from "@/components/globe/spriteAtlas";
@@ -17,7 +18,7 @@ const PATH_REFRESH_MS = 10_000;
 const PATH_OPACITY = 0.75;
 const scratchPos = new THREE.Vector3();
 
-/** The selected object: its sprite at 3× inside pixel corner brackets, and its orbit path over one period
+/** The selected object: its sprite enlarged inside pixel corner brackets, and its orbit path over one period
  * centred on now, fading toward both ends. Both are depth-tested, so they hide behind the Earth. */
 export function Selection({
   record,
@@ -33,12 +34,14 @@ export function Selection({
   atlas: THREE.Texture;
 }) {
   const gl = useThree((s) => s.gl);
+  const camera = useThree((s) => s.camera) as THREE.PerspectiveCamera;
+  const height = useThree((s) => s.size.height);
   const geometry = useMemo(() => {
     const g = buildObjectGeometry([record]);
     setVisibility(g, [true]);
     return g;
   }, [record]);
-  const material = useMemo(() => createObjectMaterial(atlas, { scale: 3, bracket: true }), [atlas]);
+  const material = useMemo(() => createObjectMaterial(atlas, { bracket: true }), [atlas]);
   const point = useRef<THREE.Points>(null);
 
   const line = useMemo(() => {
@@ -97,7 +100,9 @@ export function Selection({
     prev.setXYZ(0, f.prev![index * 3], f.prev![index * 3 + 1], f.prev![index * 3 + 2]);
     next.setXYZ(0, f.next![index * 3], f.next![index * 3 + 1], f.next![index * 3 + 2]);
     prev.needsUpdate = next.needsUpdate = true;
-    updateObjectUniforms(material, gl, frameAlpha(f, simClock.now()), 1); // fade 1: always the icon
+    const art = artScale(earthRadiusPx(camera.position.length(), height, camera.fov));
+    // fade 1: always the icon, drawn larger than its neighbours (see selectionScale)
+    updateObjectUniforms(material, gl, { alpha: frameAlpha(f, simClock.now()), fade: 1, art, dot: 1, scale: selectionScale(art) });
   });
 
   return (

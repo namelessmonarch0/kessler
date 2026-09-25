@@ -13,6 +13,21 @@ export const LOD_ICONS_ABOVE_PX = 600;
 export const lodFade = (earthRadiusPx: number) =>
   Math.min(Math.max((earthRadiusPx - LOD_DOTS_BELOW_PX) / (LOD_ICONS_ABOVE_PX - LOD_DOTS_BELOW_PX), 0), 1);
 
+const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi);
+
+/** Earth radius on screen (CSS px) at the default view; dots are 1× there. */
+const DEFAULT_VIEW_PX = 265;
+
+/** CSS px per sprite pixel: grows smoothly with the square root of the Earth's on-screen size, from 1.5 where icons
+ * start to appear up to 6 when zoomed right in. */
+export const artScale = (earthRadiusPx: number) => clamp(1.5 * Math.sqrt(earthRadiusPx / LOD_DOTS_BELOW_PX), 1.5, 6);
+
+/** Zoomed-out dots grow gently too: 1× at the default view, up to 2×. */
+export const dotScale = (earthRadiusPx: number) => clamp(Math.sqrt(earthRadiusPx / DEFAULT_VIEW_PX), 1, 2);
+
+/** Extra scale for the selected object's sprite: at least 4.5 CSS px per sprite pixel, and 1.5× its neighbours. */
+export const selectionScale = (art: number) => Math.max(4.5 / art, 1.5);
+
 /** Interpolation factor between the two latest worker frames: the same factor `interpolate` uses. */
 export function frameAlpha(f: Frames, timeMs: number): number {
   return f.nextTime > f.prevTime ? Math.min(Math.max((timeMs - f.prevTime) / (f.nextTime - f.prevTime), 0), 1.5) : 1;

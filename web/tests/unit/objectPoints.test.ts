@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
-import { applyFrame, buildObjectGeometry, frameAlpha, lodFade, setVisibility, LOD_DOTS_BELOW_PX, LOD_ICONS_ABOVE_PX } from "@/components/globe/objectPoints";
+import { applyFrame, artScale, buildObjectGeometry, dotScale, frameAlpha, lodFade, selectionScale, setVisibility, LOD_DOTS_BELOW_PX, LOD_ICONS_ABOVE_PX } from "@/components/globe/objectPoints";
 import { kindColour, spriteRow } from "@/components/globe/spriteAtlas";
 import { SPRITES, variantOf } from "@/components/globe/objectSprites";
 import type { OrbitRecord } from "@/lib/snapshot";
@@ -75,5 +75,26 @@ describe("lodFade", () => {
     const mid = lodFade((LOD_DOTS_BELOW_PX + LOD_ICONS_ABOVE_PX) / 2);
     expect(mid).toBeGreaterThan(0);
     expect(mid).toBeLessThan(1);
+  });
+});
+
+describe("zoom scaling", () => {
+  it("grows icons smoothly (no steps) from 1.5 CSS px per sprite pixel up to a 6 px cap", () => {
+    expect(artScale(LOD_DOTS_BELOW_PX)).toBeCloseTo(1.5, 5);
+    expect(artScale(100)).toBe(1.5);
+    expect(artScale(1e6)).toBe(6);
+    const a = artScale(700), b = artScale(701);
+    expect(b).toBeGreaterThan(a);
+    expect(b - a).toBeLessThan(0.01); // continuous: a 1 px zoom change moves the size by a sliver
+    expect(artScale(4 * LOD_DOTS_BELOW_PX)).toBeCloseTo(3, 5); // square-root growth
+  });
+  it("grows dots gently from 1× at the default view to at most 2×", () => {
+    expect(dotScale(265)).toBe(1);
+    expect(dotScale(530)).toBeGreaterThan(1);
+    expect(dotScale(1e6)).toBe(2);
+  });
+  it("keeps the selection at least 4.5 CSS px per sprite pixel and 1.5× its neighbours", () => {
+    expect(selectionScale(1.5) * 1.5).toBeCloseTo(4.5, 5);
+    expect(selectionScale(6)).toBe(1.5);
   });
 });

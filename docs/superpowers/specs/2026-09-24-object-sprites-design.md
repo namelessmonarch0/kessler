@@ -14,12 +14,17 @@ to draw.
 - Look: rich shaded pixel icons (mockup option B): three tones (light, base, dark) of each type's globe colour,
   several variants per type (4 payload, 2 rocket body, 6 debris).
 - Icons point along their direction of travel, snapped to 8 screen angles so pixels stay crisp.
-- Selected object: its icon at 3× with pixel-art corner brackets, plus its orbit path.
+- Selected object: its icon enlarged (at least 4.5 CSS px per sprite pixel and 1.5× its neighbours) inside corner
+  brackets drawn at a fixed 2 CSS px thickness, plus its orbit path.
 - Approach: GPU point sprites (one point per object, one draw call per orbit group).
 
 ## Behaviour
 
-- Fixed pixel size: one sprite pixel = one CSS pixel at every zoom. Point centres snap to the device-pixel grid.
+- Size grows smoothly with zoom (revised 2026-09-25 after owner feedback that fixed 1 px sprites were too small
+  and didn't grow): CSS px per sprite pixel = clamp(1.5·√(Earth radius px / 330), 1.5, 6); dots scale by
+  clamp(√(Earth radius px / 265), 1, 2). Fractional scales use sharp-bilinear sampling (solid sprite pixels,
+  one-device-pixel blends at their seams), so growth is continuous without blur or uneven pixel columns. Point
+  centres snap to the device-pixel grid.
 - Level of detail by the Earth's on-screen radius: plain dots when zoomed out (2 px payload and rocket body,
   1–2 px debris, base colour), crossfading into icons through an ordered-dither band as you zoom in. Thresholds
   tuned from screenshots.

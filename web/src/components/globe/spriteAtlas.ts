@@ -58,11 +58,12 @@ export function buildAtlas(): { data: Uint8Array; width: number; height: number 
   return { data, width, height };
 }
 
-/** The atlas as a nearest-filtered texture (pixel art: no smoothing, no mipmaps). */
+/** The atlas as a texture. Linear filtering serves the object shader's sharp-bilinear sampling, which only ever
+ * blends across the seam between two sprite pixels; no mipmaps. */
 export function createAtlasTexture(): THREE.DataTexture {
   const { data, width, height } = buildAtlas();
   const tex = new THREE.DataTexture(data, width, height, THREE.RGBAFormat);
-  tex.minFilter = tex.magFilter = THREE.NearestFilter;
+  tex.minFilter = tex.magFilter = THREE.LinearFilter;
   tex.generateMipmaps = false;
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.needsUpdate = true;

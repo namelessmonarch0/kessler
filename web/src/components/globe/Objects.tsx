@@ -9,7 +9,7 @@ import type { OrbitRecord } from "@/lib/snapshot";
 import { isVisible, useExplorer } from "@/lib/store";
 import { usePropagation, type PropagationFrames } from "@/components/globe/usePropagation";
 import { interpolate } from "@/components/globe/instances";
-import { applyFrame, buildObjectGeometry, frameAlpha, lodFade, setVisibility } from "@/components/globe/objectPoints";
+import { applyFrame, artScale, buildObjectGeometry, dotScale, frameAlpha, lodFade, setVisibility } from "@/components/globe/objectPoints";
 import { createObjectMaterial, updateObjectUniforms } from "@/components/globe/objectMaterial";
 import { createAtlasTexture } from "@/components/globe/spriteAtlas";
 import { Selection } from "@/components/globe/Selection";
@@ -87,7 +87,8 @@ export function Objects({
       applyFrame(geometry, f.prev, f.next);
       uploaded.current = { geometry, next: f.next };
     }
-    updateObjectUniforms(material, gl, frameAlpha(f, simClock.now()), lodFade(earthRadiusPx(camera.position.length(), height, camera.fov)));
+    const r = earthRadiusPx(camera.position.length(), height, camera.fov);
+    updateObjectUniforms(material, gl, { alpha: frameAlpha(f, simClock.now()), fade: lodFade(r), art: artScale(r), dot: dotScale(r) });
   });
 
   const selectedIndex = selectedId === null ? undefined : indexById.get(selectedId);
