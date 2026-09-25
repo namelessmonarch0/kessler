@@ -1,0 +1,82 @@
+# Orbit-history archive (GP history recorder)
+
+Date: 2026-09-25. Status: design approved by the owner in conversation; this spec awaits their review.
+
+Part 1 of 4 in the analysis roadmap agreed on 2026-09-25: (1) this history recorder, (2) crowding by altitude
+and inclination, (3) breakup aftermath (survival curves, Gabbard diagrams), (4) orbital lifetime and disposal
+compliance. Each part gets its own spec, plan and build.
+
+## Why
+
+`ingest-gp` fetches the latest element set (GP/OMM) for every on-orbit object from Space-Track every 6 hours and
+replaces `gp_elements`, so the history of how each orbit changes is thrown away. Later work needs it: decay
+tracking, manoeuvre and breakup detection, and the ML re-entry predictor on the roadmap. History not recorded now
+is expensive to recover later, so recording starts now.
+
+## Scope
+
+- In: record every new element set from each `ingest-gp` run, from deployment onward; a reader for date ranges.
+- Out (owner decision): a multi-year backfill of past history. It is a later, separate piece; the layout below is
+  designed so a bulk import lands in the same tree with a different source tag.
+- Out: anything visible on the site; changes to schedules, Lambdas or infrastructure.
+
+## Design
+
+### Flow (inside `run_ingest_gp`, `api/app/ingest/gp.py`)
+
+1. Fetch as today (Space-Track, or the CelesTrak fallback). Keep the raw records next to the parsed ones.
+2. Select new element sets: a raw record is new when its epoch is later than the epoch stored in `gp_elements` for
+   that NORAD ID, or the ID has no row there. The first run after deployment therefore archives everything
+   (baseline). Records for IDs unknown to `objects` (typically new launches) are archived too; until SATCAT
+   catches up they are re-archived every run, and the reader drops the repeats.
+3. Write the archive file for the run (only the new records).
+4. Then write `gp_elements` and the globe snapshots exactly as today.
+
+Ordering rule: archive first. If step 3 fails, the run fails before touching the database (the site keeps its
+last good data, the run is logged failed, the existing `kessler-jobs-errors` alarm fires) and the next run
+retries with the same differences, so no history is lost. If step 4 fails after step 3 succeeded, the next run
+archives the same records again; duplicates are rare and the reader removes them.
+
+### Storage
+
+- Existing snapshot bucket (removal policy RETAIN), prefix `history/`, written through the existing
+  `SnapshotStore` (S3 in production, a local directory in development and tests).
+- Key: `history/gp/YYYY/MM/DD/HHMMSSZ-<source>.jsonl.gz` in UTC, from the run start time, e.g.
+  `history/gp/2026/09/25/064112Z-spacetrack.jsonl.gz`. Sources: `spacetrack`, `celestrak`; a future bulk
+  import uses `spacetrack-history`.
+- Content: gzip JSON Lines, one element set per line, exactly as received: every field the source sent,
+  including TLE lines and Space-Track's per-element-set `GP_ID`; nothing renamed or dropped (CelesTrak CSV rows
+  are written as JSON objects of their columns).
+- Expected size: ~1–3 MB per run, ~2–3 GB per year (a few cents per month).
+
+### Units
+
+- `api/app/history/archive.py`: select new records (step 2), encode the file, compute the key, write it.
+- `api/app/history/read.py`: `read_history(store, start, end)` yields records in a UTC date range, deduplicated
+  on (NORAD ID, epoch), keeping the first occurrence in key order.
+- `python -m app.history dump --from YYYY-MM-DD --to YYYY-MM-DD`: prints JSON Lines to stdout for exploration.
+- `SnapshotStore` gains a `list(prefix)` method (S3 and local implementations) for the reader.
+
+### Monitoring
+
+- The job result reports the archived count next to the written count, e.g.
+  `{"ingest_gp": 30112, "archived_gp": 18450}`, and the run logs it.
+- Failures surface through the existing jobs error alarm; no new alarm.
+
+## Testing
+
+On the existing testcontainers Postgres and local store:
+
+- First run archives every record; a repeat with the same epochs archives nothing; one changed epoch archives
+  exactly that record; unknown NORAD IDs are archived.
+- A failing archive write leaves `gp_elements` unchanged and logs the run as failed.
+- CelesTrak fallback files carry the `celestrak` tag.
+- Reader: round-trips a file with every raw field intact; drops duplicates; respects the date range (inclusive
+  days, UTC); tolerates an empty range.
+- S3 store `list`/`put`/`get` against moto.
+
+## Deployment
+
+Code only: the jobs image ships through the existing GitHub Actions deploy. After deploying, check that the first
+scheduled run wrote a baseline file under `history/gp/` and that the following run's file is smaller (only
+changed element sets).
