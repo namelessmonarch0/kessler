@@ -1,18 +1,25 @@
+import gzip
 import hashlib
-import json
 from datetime import UTC, datetime
-from typing import Literal
+from typing import Annotated, Literal
 
 import psycopg
 from fastapi import APIRouter, Depends, Path, Query, Request, Response
 
 from app.errors import ApiError
 from app.ingest.runlog import last_success
-from app.ingest.snapshot import SNAPSHOT_GROUPS, snapshot_key
+from app.ingest.snapshot import (
+    GENERATION_PATTERN,
+    SNAPSHOT_GROUPS,
+    generation_key,
+    names_file,
+    read_pointer,
+    snapshot_file,
+    snapshot_key,
+)
 from app.services import stats
 from app.services.events import list_events
 from app.services.filters import parse_filters, parse_year_range
-from app.services.globe import globe_names
 from app.services.meta import get_meta
 from app.services.objects import get_object, search_objects
 
@@ -131,33 +138,60 @@ def object_detail(
     return obj
 
 
-@router.get("/globe/snapshot")
-def globe_snapshot(request: Request, group: Literal["LEO", "HIGH"] = "LEO") -> Response:
-    assert group in SNAPSHOT_GROUPS
-    data = request.app.state.store.get(snapshot_key(group))
+IMMUTABLE = "public, max-age=31536000, immutable"
+CURRENT_FILE = "public, max-age=60, s-maxage=300"
+Generation = Annotated[str | None, Query(pattern=GENERATION_PATTERN)]
+
+
+def _globe_file(request: Request, group: str, gen: str | None, filename: str,
+                legacy_key: str | None) -> tuple[bytes | None, dict[str, str]]:
+    """Reads one globe file: from the requested generation (immutable), or from the current one
+    (short-lived), or — before any generation exists — from the legacy key when there is one.
+    Returns (None, headers) when the client's ETag still matches."""
+    store = request.app.state.store
+    if gen is not None:
+        key, cache = generation_key(gen, filename), IMMUTABLE
+    else:
+        pointer = read_pointer(store)
+        key = generation_key(pointer["generation"], filename) if pointer else legacy_key
+        cache = CURRENT_FILE
+    data = store.get(key) if key else None
     if data is None:
-        raise ApiError(404, "not_found", f"no globe snapshot for group {group} yet")
+        where = f" in generation {gen}" if gen else ""
+        raise ApiError(404, "not_found", f"no globe data for group {group}{where}")
     etag = '"' + hashlib.sha1(data).hexdigest() + '"'
-    headers = {"ETag": etag, "Cache-Control": "public, max-age=300, s-maxage=21600"}
+    headers = {"ETag": etag, "Cache-Control": cache}
     if request.headers.get("if-none-match") == etag:
+        return None, headers
+    return data, headers
+
+
+@router.get("/globe/current")
+def globe_current(request: Request, response: Response) -> dict:
+    pointer = read_pointer(request.app.state.store)
+    if pointer is None:
+        raise ApiError(404, "not_found", "no globe generation published yet")
+    response.headers["Cache-Control"] = "public, max-age=60, s-maxage=60"
+    return pointer
+
+
+@router.get("/globe/snapshot")
+def globe_snapshot(
+    request: Request, group: Literal["LEO", "HIGH"] = "LEO", gen: Generation = None
+) -> Response:
+    assert group in SNAPSHOT_GROUPS
+    data, headers = _globe_file(request, group, gen, snapshot_file(group), snapshot_key(group))
+    if data is None:
         return Response(status_code=304, headers=headers)
     return Response(content=data, media_type="application/octet-stream", headers=headers)
 
 
 @router.get("/globe/names")
 def globe_names_route(
-    request: Request,
-    group: Literal["LEO", "HIGH"] = "LEO",
-    conn: psycopg.Connection = Depends(get_conn),
+    request: Request, group: Literal["LEO", "HIGH"] = "LEO", gen: Generation = None
 ) -> Response:
-    generated = last_success(conn, "ingest_gp")
-    body = json.dumps(
-        {"generated_at": generated.isoformat() if generated else None,
-         "names": globe_names(conn, group)},
-        separators=(",", ":"),
-    ).encode()
-    etag = '"' + hashlib.sha1(body).hexdigest() + '"'
-    headers = {"ETag": etag, "Cache-Control": "public, max-age=300, s-maxage=21600"}
-    if request.headers.get("if-none-match") == etag:
+    data, headers = _globe_file(request, group, gen, names_file(group), None)
+    if data is None:
         return Response(status_code=304, headers=headers)
-    return Response(content=body, media_type="application/json", headers=headers)
+    return Response(content=gzip.decompress(data), media_type="application/json",
+                    headers=headers)

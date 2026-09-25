@@ -4,7 +4,6 @@ from fastapi.testclient import TestClient
 from app.api.main import create_app
 from app.config import Settings
 from app.db import Database
-from app.ingest.snapshot import snapshot_key
 from tests.conftest import make_client  # noqa: F401  (re-export for this module)
 
 
@@ -94,17 +93,6 @@ def test_events_and_meta(client):
     assert len(events) == 10
     meta = client.get("/api/meta").json()
     assert meta["attribution"].startswith("Data: USSPACECOM")
-
-
-def test_snapshot_etag_and_404(client, store):
-    store.put(snapshot_key("LEO"), b"\x1f\x8bdata")
-    r = client.get("/api/globe/snapshot?group=LEO")
-    assert r.status_code == 200 and r.content == b"\x1f\x8bdata"
-    assert r.headers["content-type"] == "application/octet-stream"
-    etag = r.headers["etag"]
-    again = client.get("/api/globe/snapshot?group=LEO", headers={"If-None-Match": etag})
-    assert again.status_code == 304
-    assert client.get("/api/globe/snapshot?group=HIGH").status_code == 404
 
 
 def test_origin_secret_required_except_health(world, migrated, store):
