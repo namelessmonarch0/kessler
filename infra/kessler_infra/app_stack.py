@@ -112,6 +112,39 @@ class KesslerAppStack(Stack):
         )
         alarm.add_alarm_action(cw_actions.SnsAction(topic))
 
+        # --- kessler-agent: a narrow identity for local tooling (Claude Code's checks), so
+        # day-to-day reads don't need the owner's 12-hour console sign-in. The owner creates its
+        # access key by hand (a key in CloudFormation would leak the secret). It reads Kessler's
+        # stacks, snapshot bucket, logs, metrics and Lambda quota requests and can start the jobs
+        # Lambda; it cannot write data, change infrastructure, or read SSM secrets. ---
+        agent = iam.User(self, "AgentUser", user_name="kessler-agent")
+        agent.add_to_policy(iam.PolicyStatement(
+            actions=["cloudformation:DescribeStacks", "cloudformation:DescribeStackEvents",
+                     "cloudformation:DescribeStackResources"],
+            resources=[f"arn:aws:cloudformation:{self.region}:{self.account}:stack/Kessler*/*"],
+        ))
+        self.bucket.grant_read(agent)
+        agent.add_to_policy(iam.PolicyStatement(
+            actions=["logs:FilterLogEvents", "logs:GetLogEvents", "logs:DescribeLogStreams",
+                     "logs:StartLiveTail"],
+            resources=[
+                f"arn:aws:logs:{self.region}:{self.account}:log-group:/aws/lambda/kessler-*",
+                f"arn:aws:logs:{self.region}:{self.account}:log-group:/aws/lambda/kessler-*:*",
+            ],
+        ))
+        agent.add_to_policy(iam.PolicyStatement(
+            actions=["logs:DescribeLogGroups", "cloudwatch:GetMetricData",
+                     "cloudwatch:GetMetricStatistics", "cloudwatch:ListMetrics",
+                     "cloudwatch:DescribeAlarms", "servicequotas:GetServiceQuota",
+                     "servicequotas:ListRequestedServiceQuotaChangeHistoryByQuota"],
+            resources=["*"],  # these list/read calls don't support resource-level scoping
+        ))
+        agent.add_to_policy(iam.PolicyStatement(
+            actions=["lambda:GetFunction", "lambda:GetFunctionConfiguration"],
+            resources=[self.api_fn.function_arn, self.jobs_fn.function_arn],
+        ))
+        self.jobs_fn.grant_invoke(agent)
+
         # --- $5/month budget (spec §9) ---
         subscriber = budgets.CfnBudget.SubscriberProperty(subscription_type="EMAIL",
                                                           address=alert_email)

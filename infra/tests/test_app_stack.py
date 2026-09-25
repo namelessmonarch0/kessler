@@ -165,3 +165,44 @@ def test_budget_alerts_at_five_dollars(app_template):
         assert notification["ComparisonOperator"] == "GREATER_THAN"
         assert notification["Threshold"] == 100
         assert notification["ThresholdType"] == "PERCENTAGE"
+
+
+def _agent_statements(template):
+    return _policy_statements(template, "AgentUserDefaultPolicy")
+
+
+def test_agent_user_can_read_kessler_and_start_jobs(app_template):
+    t = app_template()
+    t.has_resource_properties("AWS::IAM::User", {"UserName": "kessler-agent"})
+    actions = set(_policy_actions(t, "AgentUserDefaultPolicy"))
+    assert "cloudformation:DescribeStacks" in actions
+    assert any(a.startswith("s3:GetObject") for a in actions)
+    assert any(a.startswith("s3:List") for a in actions)
+    assert {"logs:FilterLogEvents", "logs:GetLogEvents", "logs:DescribeLogGroups"} <= actions
+    assert {"cloudwatch:GetMetricData", "cloudwatch:DescribeAlarms"} <= actions
+    assert {"lambda:GetFunction", "lambda:InvokeFunction"} <= actions
+
+
+def test_agent_user_cannot_write_or_touch_secrets(app_template):
+    actions = _policy_actions(app_template(), "AgentUserDefaultPolicy")
+    forbidden = ("s3:Put", "s3:Delete", "iam:", "ssm:", "kms:", "lambda:Update", "lambda:Delete",
+                 "lambda:Create", "lambda:Add", "cloudformation:Create", "cloudformation:Update",
+                 "cloudformation:Delete", "logs:Delete", "logs:Put", "logs:Create")
+    assert not [a for a in actions if a.startswith(forbidden) or a == "*"]
+
+
+def test_agent_user_scopes_invoke_and_logs_to_kessler(app_template):
+    for st in _agent_statements(app_template()):
+        actions = st["Action"] if isinstance(st["Action"], list) else [st["Action"]]
+        resources = json.dumps(st["Resource"])
+        if "lambda:InvokeFunction" in actions:
+            assert "JobsFunction" in resources and "ApiFunction" not in resources
+        if "logs:FilterLogEvents" in actions:
+            assert "/aws/lambda/kessler-*" in resources and '"*"' not in resources
+        if "cloudformation:DescribeStacks" in actions:
+            assert "stack/Kessler*/*" in resources
+
+
+def test_agent_user_has_no_access_key_in_the_template(app_template):
+    # The owner creates the key by hand; a key in CloudFormation would leak the secret.
+    app_template().resource_count_is("AWS::IAM::AccessKey", 0)
