@@ -24,6 +24,8 @@ class SnapshotStore(Protocol):
 
     def get(self, key: str) -> bytes | None: ...
 
+    def keys(self, prefix: str) -> list[str]: ...
+
 
 class LocalSnapshotStore:
     def __init__(self, root: str | Path):
@@ -39,6 +41,14 @@ class LocalSnapshotStore:
     def get(self, key: str) -> bytes | None:
         path = self.root / key
         return path.read_bytes() if path.exists() else None
+
+    def keys(self, prefix: str) -> list[str]:
+        """Stored keys starting with `prefix`, sorted. Half-written `.tmp` files are not keys."""
+        start = self.root / prefix[: prefix.rfind("/") + 1]
+        if not start.is_dir():
+            return []
+        found = (p.relative_to(self.root).as_posix() for p in start.rglob("*") if p.is_file())
+        return sorted(k for k in found if k.startswith(prefix) and not k.endswith(".tmp"))
 
 
 def snapshot_key(group: str) -> str:

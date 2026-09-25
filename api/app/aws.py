@@ -39,3 +39,9 @@ class S3SnapshotStore:
                 return None
             raise
         return obj["Body"].read()
+
+    def keys(self, prefix: str) -> list[str]:
+        pages = self.client.get_paginator("list_objects_v2").paginate(
+            Bucket=self.bucket, Prefix=prefix
+        )
+        return sorted(obj["Key"] for page in pages for obj in page.get("Contents", []))

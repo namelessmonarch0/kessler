@@ -106,3 +106,16 @@ def test_snapshot_endpoint_404_when_s3_object_missing(aws, migrated):
     db.close()
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "not_found"
+
+
+def test_s3_store_keys_lists_sorted_keys_under_a_prefix(aws):
+    boto3.client("s3", region_name=REGION).create_bucket(
+        Bucket="snaps", CreateBucketConfiguration={"LocationConstraint": REGION}
+    )
+    store = S3SnapshotStore("snaps")
+    for key in ("history/gp/2026/09/25/b", "history/gp/2026/09/25/a", "globe/LEO.bin.gz"):
+        store.put(key, b"x")
+    assert store.keys("history/gp/2026/09/25/") == [
+        "history/gp/2026/09/25/a", "history/gp/2026/09/25/b",
+    ]
+    assert store.keys("history/gp/2026/09/26/") == []
