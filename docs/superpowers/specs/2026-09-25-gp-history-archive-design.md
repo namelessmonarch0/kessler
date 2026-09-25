@@ -17,7 +17,11 @@ is expensive to recover later, so recording starts now.
 
 - In: record every new element set from each `ingest-gp` run, from deployment onward; a reader for date ranges.
 - Out (owner decision): a multi-year backfill of past history. It is a later, separate piece; the layout below is
-  designed so a bulk import lands in the same tree with a different source tag.
+  designed so a bulk import lands in the same tree with a different source tag. Constraint on that future work:
+  its files must be placed in per-epoch-day folders, ordered by epoch, with keys that sort before that day's live
+  files (e.g. a `000000Z-` prefix) -- otherwise the reader's "later than last yielded" rule drops its in-between
+  element sets, since the recorder assumes archive order tracks epoch order within a NORAD ID. The alternative is
+  to change the reader before that import lands.
 - Out: anything visible on the site; changes to schedules, Lambdas or infrastructure.
 
 ## Design
@@ -26,8 +30,12 @@ is expensive to recover later, so recording starts now.
 
 1. Fetch as today (Space-Track, or the CelesTrak fallback). Keep the raw records next to the parsed ones.
 2. Select new element sets: a raw record is new when its epoch is later than the epoch stored in `gp_elements` for
-   that NORAD ID, or the ID has no row there. The first run after deployment therefore archives everything
-   (baseline). Records for IDs unknown to `objects` (typically new launches) are archived too; until SATCAT
+   that NORAD ID, or the ID has no row there. Baseline rule: when the archive holds no files yet (a fresh deploy,
+   checked via `store.keys(HISTORY_PREFIX)`), the run is a baseline and every well-formed record counts as new
+   regardless of `gp_elements` -- by deploy time `gp_elements` is already populated, so the plain "epoch later than
+   stored" rule alone would silently skip every object whose epoch hasn't changed since deploy. Malformed records
+   are still skipped and counted even in a baseline run. Once any archive file exists, the normal rule applies.
+   Records for IDs unknown to `objects` (typically new launches) are archived too; until SATCAT
    catches up they are re-archived every run, and the reader drops the repeats.
 3. Write the archive file for the run (only the new records). A run with no new records still writes an empty
    file, so every run leaves a trace. Records whose NORAD ID or epoch cannot be parsed are not archived (the
@@ -58,7 +66,9 @@ archives the same records again; duplicates are rare and the reader removes them
 - `api/app/history/read.py`: `read_history(store, start, end)` yields records in a UTC date range (inclusive
   days) in key order, deduplicated per object: a record is yielded only if its epoch is later than the last one
   yielded for that NORAD ID. The recorder only ever archives epochs newer than the stored one, so repeats (retries,
-  unknown objects re-archived) always carry an epoch already seen; memory stays one entry per object.
+  unknown objects re-archived) always carry an epoch already seen; memory stays one entry per object. `start`/`end`
+  are the days records were *archived* on, not their epochs (a file can hold epochs weeks old); dedupe is per call
+  only, not persisted across calls.
 - `python -m app.history dump --from YYYY-MM-DD --to YYYY-MM-DD`: prints JSON Lines to stdout for exploration.
 - `SnapshotStore` gains a `keys(prefix)` method returning sorted keys (S3 and local implementations) for the
   reader.
@@ -75,6 +85,8 @@ On the existing testcontainers Postgres and local store:
 
 - First run archives every record; a repeat with the same epochs archives nothing; one changed epoch archives
   exactly that record; unknown NORAD IDs are archived.
+- Baseline run on an empty archive with a populated `gp_elements` (the production post-deploy situation): every
+  well-formed record is archived regardless of its stored epoch.
 - A failing archive write leaves `gp_elements` unchanged and logs the run as failed.
 - CelesTrak fallback files carry the `celestrak` tag.
 - Reader: round-trips a file with every raw field intact; drops duplicates; respects the date range (inclusive
