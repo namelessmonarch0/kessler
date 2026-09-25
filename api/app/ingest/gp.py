@@ -11,7 +11,7 @@ import psycopg
 from app.config import Settings
 from app.domain.orbits import parse_epoch
 from app.history.archive import archive_gp
-from app.ingest.runlog import last_success, run_log
+from app.ingest.runlog import GLOBE_LOCK, advisory_lock, last_success, run_log
 from app.ingest.snapshot import SnapshotStore, write_snapshots
 from app.ingest.sources import SourceError
 
@@ -78,13 +78,14 @@ def write_gp(
     conn: psycopg.Connection, records: list[GpRecord], source: str, *, replace: bool,
     minimum: int | None = None,
 ) -> int:
-    """Writes parsed GP records, matched against known objects.
+    """Writes parsed GP records for known objects and returns the rows inserted or updated.
 
-    When `minimum` is given (the Space-Track replace path), the *written* rowcount is
-    checked against it before the transaction commits: the `WHERE norad_id IN (...)` join
-    can drop far more rows than the parse-level floor ever sees (e.g. GP ingested before
-    the first SATCAT ingest), which would otherwise silently replace gp_elements with an
-    almost-empty table while the run still logs "ok".
+    A stored element set is only replaced by one with a strictly later epoch (an equal epoch is
+    the same set), so a stale fallback source can never move an object back in time.
+    Space-Track runs (`replace`) are the full on-orbit catalog: rows for objects missing from the
+    payload are deleted. `minimum` guards that delete: it counts incoming records that match
+    known objects and is checked before anything is deleted, so a short or garbage payload
+    leaves the table untouched.
     """
     cols = ", ".join(GP_COLUMNS)
     updates = ", ".join(f"{c} = EXCLUDED.{c}" for c in (*GP_COLUMNS[1:], "source", "fetched_at"))
@@ -95,8 +96,23 @@ def write_gp(
         with conn.cursor() as cur, cur.copy(f"COPY gp_in ({cols}, source) FROM STDIN") as copy:
             for r in records:
                 copy.write_row((*astuple(r), source))
+        matched = conn.execute(
+            "SELECT count(DISTINCT norad_id) AS n FROM gp_in "
+            "WHERE norad_id IN (SELECT norad_id FROM objects)"
+        ).fetchone()["n"]
+        unknown = len({r.norad_id for r in records}) - matched
+        if unknown:
+            log.warning("skipped %d GP records for unknown norad_ids", unknown)
+        if minimum is not None and matched < minimum:
+            raise SourceError(
+                f"{source} GP payload matched only {matched} known objects, expected at "
+                f"least {minimum}; keeping previous data"
+            )
         if replace:
-            conn.execute("DELETE FROM gp_elements")
+            conn.execute(
+                "DELETE FROM gp_elements WHERE norad_id NOT IN "
+                "(SELECT norad_id FROM gp_in)"
+            )
         cur = conn.execute(
             f"""
             INSERT INTO gp_elements ({cols}, source, fetched_at)
@@ -104,18 +120,13 @@ def write_gp(
             WHERE norad_id IN (SELECT norad_id FROM objects)
             ORDER BY norad_id, epoch DESC
             ON CONFLICT (norad_id) DO UPDATE SET {updates}
+            WHERE gp_elements.epoch < EXCLUDED.epoch
             """
         )
-        written = cur.rowcount
-        dropped = len(records) - written
-        if dropped:
-            log.warning("dropped %d GP records for unknown norad_ids", dropped)
-        if minimum is not None and written < minimum:
-            raise SourceError(
-                f"{source} GP write matched only {written} known objects, expected at "
-                f"least {minimum}; keeping previous data"
-            )
-        return written
+        log.info(
+            "%s GP: %d records matched the catalog, %d written", source, matched, cur.rowcount
+        )
+        return cur.rowcount
 
 
 def fetch_gp(
@@ -154,7 +165,7 @@ def run_ingest_gp(
     now: datetime | None = None,
 ) -> GpIngestResult:
     now = now or datetime.now(UTC)
-    with run_log(conn, "ingest_gp") as run:
+    with run_log(conn, "ingest_gp") as run, advisory_lock(conn, GLOBE_LOCK):
         source, raw, records = fetch_gp(
             conn, spacetrack, celestrak, now, settings.min_gp_rows_spacetrack
         )

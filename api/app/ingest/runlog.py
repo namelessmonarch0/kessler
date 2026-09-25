@@ -5,6 +5,20 @@ from datetime import datetime
 
 import psycopg
 
+GLOBE_LOCK = "kessler.globe"
+
+
+@contextmanager
+def advisory_lock(conn: psycopg.Connection, name: str) -> Iterator[None]:
+    """Holds a session-level Postgres advisory lock for the block: runs that take the same lock
+    wait for each other (a manual run overlapping the schedule). The lock also ends with the
+    connection, so a crashed run cannot leave it held."""
+    conn.execute("SELECT pg_advisory_lock(hashtext(%s))", (name,))
+    try:
+        yield
+    finally:
+        conn.execute("SELECT pg_advisory_unlock(hashtext(%s))", (name,))
+
 
 @dataclass
 class RunState:

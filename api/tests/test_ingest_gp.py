@@ -3,9 +3,11 @@ import io
 import json
 from datetime import UTC, datetime, timedelta
 
+import psycopg
 import pytest
 
 from app.config import Settings
+from app.db import connect
 from app.history.archive import HISTORY_PREFIX, decode_records
 from app.ingest.gp import GpIngestResult, parse_gp_csv, parse_gp_records, run_ingest_gp
 from app.ingest.satcat import run_ingest_satcat
@@ -159,8 +161,9 @@ def test_celestrak_fallback_upserts_without_deleting(catalog, store):
         celestrak=FakeCelesTrakGp(SAMPLE), store=store, settings=SETTINGS,
         now=datetime.now(UTC),
     )
-    assert n.written == 2
+    assert n.written == 1                                # only the ISS epoch is newer
     rows = gp_rows(catalog)
+    assert rows[24876]["source"] == "spacetrack"          # equal epoch: stored row kept
     assert set(rows) == {25544, 24876, 29733}          # debris 29733 kept
     assert rows[25544]["source"] == "celestrak"          # refreshed
     assert rows[29733]["source"] == "spacetrack"
@@ -331,3 +334,69 @@ def test_celestrak_fallback_is_archived_with_its_tag(catalog, store):
     records = decode_records(store.get(key))
     assert records == list(csv.DictReader(io.StringIO(CT_SAMPLE)))  # whole CSV rows, as received
     assert result.archived == len(records) == 2
+
+
+class StaleCelesTrakGp(FakeCelesTrak):
+    """CelesTrak serving an ISS element set older than the one Space-Track already gave us."""
+
+    def gp_active_csv(self) -> str:
+        return CT_SAMPLE.replace("2026-09-23T06:30:37.496448", "2026-09-21T06:00:00.000000")
+
+
+def test_older_fallback_element_set_does_not_replace_newer(catalog, store):
+    run_ingest_gp(
+        catalog, spacetrack=FakeSpaceTrack(ST_SAMPLE), celestrak=FakeCelesTrakGp(SAMPLE),
+        store=store, settings=SETTINGS, now=NOW,
+    )
+    before = gp_rows(catalog)
+    result = run_ingest_gp(
+        catalog, spacetrack=None, celestrak=StaleCelesTrakGp(SAMPLE),
+        store=store, settings=SETTINGS, now=NOW + timedelta(hours=6),
+    )
+    assert result.written == 0
+    after = gp_rows(catalog)
+    assert after[25544]["epoch"] == before[25544]["epoch"]
+    assert after[25544]["source"] == "spacetrack"
+
+
+def test_spacetrack_run_removes_only_objects_missing_from_the_payload(catalog, store):
+    s = Settings(min_satcat_rows=10, min_gp_rows_spacetrack=2, min_gp_rows_celestrak=1)
+    kw = dict(celestrak=FakeCelesTrakGp(SAMPLE), store=store, settings=s)
+    run_ingest_gp(catalog, spacetrack=FakeSpaceTrack(ST_SAMPLE), now=NOW, **kw)
+    without_debris = [r for r in ST_SAMPLE if r["NORAD_CAT_ID"] != "29733"]
+    result = run_ingest_gp(
+        catalog, spacetrack=FakeSpaceTrack(without_debris), now=NOW + timedelta(hours=6), **kw
+    )
+    assert set(gp_rows(catalog)) == {25544, 24876}
+    assert result.written == 0  # the remaining element sets are unchanged
+
+
+def test_payload_matching_too_few_objects_deletes_nothing(catalog, store):
+    run_ingest_gp(
+        catalog, spacetrack=FakeSpaceTrack(ST_SAMPLE), celestrak=FakeCelesTrakGp(SAMPLE),
+        store=store, settings=SETTINGS, now=NOW,
+    )
+    before = gp_rows(catalog)
+    short = [r for r in ST_SAMPLE if r["NORAD_CAT_ID"] in ("25544", "123456", "24876")]
+    short = [dict(r, EPOCH="2026-09-23T00:00:00") for r in short]  # 2 known objects < floor of 3
+    with pytest.raises(SourceError, match="expected at least 3"):
+        run_ingest_gp(
+            catalog, spacetrack=FakeSpaceTrack(short), celestrak=FakeCelesTrakGp(SAMPLE),
+            store=store, settings=SETTINGS, now=NOW + timedelta(hours=6),
+        )
+    assert gp_rows(catalog) == before
+
+
+def test_overlapping_runs_wait_for_each_other(catalog, store, migrated):
+    kw = dict(spacetrack=FakeSpaceTrack(ST_SAMPLE), celestrak=FakeCelesTrakGp(SAMPLE),
+              store=store, settings=SETTINGS, now=NOW)
+    with connect(migrated) as other:
+        other.execute("SELECT pg_advisory_lock(hashtext('kessler.globe'))")  # another run in flight
+        catalog.execute("SET statement_timeout = '500ms'")
+        try:
+            with pytest.raises(psycopg.errors.QueryCanceled):
+                run_ingest_gp(catalog, **kw)
+        finally:
+            catalog.execute("RESET statement_timeout")
+        assert gp_rows(catalog) == {}  # it waited instead of writing alongside the other run
+    assert run_ingest_gp(catalog, **kw).written == 3  # the other session ended: the lock is free
