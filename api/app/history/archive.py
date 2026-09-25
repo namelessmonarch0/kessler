@@ -1,7 +1,8 @@
 """Writes each GP ingest run's new element sets to the history archive.
 
-Layout: history/gp/YYYY/MM/DD/HHMMSSZ-<source>-r<run id>.jsonl.gz (UTC), gzip JSON Lines, one element
-set per line exactly as the source sent it. See docs/superpowers/specs/2026-09-25-gp-history-archive-design.md.
+Layout: history/gp/YYYY/MM/DD/HHMMSSZ-<source>-r<run id>.jsonl.gz (UTC), gzip JSON Lines, one
+element set per line exactly as the source sent it.
+See docs/superpowers/specs/2026-09-25-gp-history-archive-design.md.
 """
 import gzip
 import json
@@ -80,7 +81,8 @@ def archive_gp(
     run_at: datetime,
     run_id: int,
 ) -> int:
-    """Writes this run's new element sets (an empty file when there are none) and returns how many."""
+    """Writes this run's new element sets (an empty file when there are
+    none) and returns how many."""
     new = select_new_records(conn, items)
     store.put(archive_key(run_at, source, run_id), encode_records(new))
     return len(new)
