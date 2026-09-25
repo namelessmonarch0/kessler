@@ -129,3 +129,11 @@ def test_baseline_run_archives_every_well_formed_record_despite_gp_elements(cata
     assert archive_gp(catalog, store, items, source="spacetrack", run_at=run_at, run_id=1) == 1
     [key] = store.keys("history/")
     assert decode_records(store.get(key)) == [items[0]]
+
+
+def test_encode_round_trips_surrogates_and_non_ascii_names():
+    records = [
+        {"OBJECT_NAME": "\ud800", "NORAD_CAT_ID": "1"},
+        {"OBJECT_NAME": "ÉTOILE", "NORAD_CAT_ID": "2"},
+    ]
+    assert decode_records(encode_records(records)) == records

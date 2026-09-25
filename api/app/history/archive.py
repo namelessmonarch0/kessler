@@ -31,9 +31,9 @@ def archive_key(run_at: datetime, source: str, run_id: int) -> str:
 
 
 def encode_records(records: Iterable[Mapping]) -> bytes:
-    body = "".join(
-        json.dumps(dict(r), ensure_ascii=False, separators=(",", ":")) + "\n" for r in records
-    )
+    # ensure_ascii (the default) keeps the output pure ASCII, so .encode("utf-8") below never
+    # raises even on a lone surrogate escape (e.g. "\ud800") that survived an upstream json.loads.
+    body = "".join(json.dumps(dict(r), separators=(",", ":")) + "\n" for r in records)
     return gzip.compress(body.encode("utf-8"), mtime=0)
 
 
