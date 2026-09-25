@@ -5,7 +5,9 @@ from fastapi.responses import JSONResponse
 
 from app.api.errors import error_body
 
-OPEN_PATHS = {"/api/health"}
+# Paths that bypass origin auth. /api/ready is open only until the origin secret is
+# retired (Task 6); until then, the deploy smoke test calls it directly without the secret.
+OPEN_PATHS = {"/api/health", "/api/ready"}
 
 
 def install_origin_auth(app: FastAPI, secret: str | None) -> None:

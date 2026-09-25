@@ -39,7 +39,16 @@ def this_year() -> int:
 
 
 @router.get("/health")
-def health(request: Request) -> dict:
+def health() -> dict:
+    """Liveness: the process answers. No database access, so it is cheap for anyone to
+    call."""
+    return {"status": "ok"}
+
+
+@router.get("/ready")
+def ready(request: Request) -> dict:
+    """Readiness: the database answers. For direct, signed calls (the deploy smoke test);
+    the site's proxy refuses this path."""
     try:
         with request.app.state.db.pool.connection() as conn:
             conn.execute("SELECT 1")

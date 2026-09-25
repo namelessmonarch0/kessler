@@ -64,12 +64,28 @@ def test_unhandled_exception_returns_json_500(world, migrated, store):
     assert "boom" not in r.text
 
 
-def test_health_returns_503_json_when_db_unavailable(migrated, store):
+def test_health_needs_no_database(migrated, store):
     db = Database(migrated)
     app = create_app(Settings(database_url=migrated), store=store, database=db)
     with TestClient(app) as c:
         db.close()
         r = c.get("/api/health")
+    assert r.status_code == 200 and r.json() == {"status": "ok"}
+
+
+def test_ready_reports_the_database(client):
+    r = client.get("/api/ready")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["status"] == "ok" and "gp_age_hours" in body
+
+
+def test_ready_returns_503_json_when_db_unavailable(migrated, store):
+    db = Database(migrated)
+    app = create_app(Settings(database_url=migrated), store=store, database=db)
+    with TestClient(app) as c:
+        db.close()
+        r = c.get("/api/ready")
     assert r.status_code == 503
     assert r.json()["error"]["code"] == "unavailable"
 
@@ -103,4 +119,5 @@ def test_origin_secret_required_except_health(world, migrated, store):
         assert c.get("/api/meta", headers={"X-Origin-Auth": "wrong"}).status_code == 403
         assert c.get("/api/meta", headers={"X-Origin-Auth": "s3cret"}).status_code == 200
         assert c.get("/api/health").status_code == 200
+        assert c.get("/api/ready").status_code == 200  # signed smoke test has no secret
     db.close()
