@@ -32,11 +32,13 @@ leaves mixed data versions). The other pieces: (2) origin protection, (3) freshn
   `norad_id` is in `objects`), checked before any delete. A short or garbage payload is still refused with the
   table untouched. (With the guard, rows written drops to only changed rows, so the old check would falsely
   fail.)
-- A session-level advisory lock (`kessler.globe`) is held for the whole GP ingest run — fetch, archive, database
-  write and publication — so overlapping runs (a manual run and a scheduled one) wait for each other rather than
-  interleave writes or pointer switches. The `publish-globe` job takes the same lock.
-- Counts: `write_gp` returns rows inserted or updated ("written"); the run log additionally records how many
-  incoming records matched the catalog. `ingest_runs.rows` keeps the written count.
+- A transaction-scoped advisory lock (`kessler.globe`) on a dedicated connection (works through Neon's pooler),
+  waited on for at most 8 minutes, is held for the whole GP ingest run — fetch, archive, database write and
+  publication — so overlapping runs (a manual run and a scheduled one) wait for each other rather than
+  interleave writes or pointer switches. A run that cannot get the lock in time fails and is recorded as failed
+  instead of hanging until the Lambda times out. The `publish-globe` job takes the same lock.
+- Counts: `write_gp` returns rows inserted or updated ("written"); how many incoming records matched the catalog
+  is logged (CloudWatch), not stored in `ingest_runs`. `ingest_runs.rows` keeps the written count.
 - Consistent with the history archive, which already treats "epoch strictly newer than stored" as new.
 
 ### 2. Snapshots switch atomically (#3)
@@ -52,25 +54,33 @@ leaves mixed data versions). The other pieces: (2) origin protection, (3) freshn
   That single PUT is the switch. Any failure before it leaves the pointer on the previous complete generation;
   the run is logged failed and the jobs alarm fires. Consistency boundary (explicit): the site serves the last
   complete generation; the database may be newer until the next successful run republishes.
-- **Cleanup.** After switching the pointer, the job deletes generations other than the current and the one
-  before it (listed via `SnapshotStore.keys("globe/gen/")`). No S3 lifecycle rule: an expiry could delete the
-  live generation if ingest stalled. `SnapshotStore` gains `delete(key)` (local and S3). The legacy
-  `globe/LEO.bin.gz` / `globe/HIGH.bin.gz` keys are no longer written; after the first generation is live the
-  job deletes them once (idempotent: missing keys are ignored).
+- **Nothing to publish.** When both groups are empty (e.g. a fresh environment's deploy runs `publish-globe`
+  before any ingest), the publication writes nothing — no generation, no pointer switch — and logs a warning;
+  a live generation stays live.
+- **Cleanup.** After switching the pointer, the job keeps the current generation, the previous one, anything
+  newer, and anything published within 48 h of the current one (a tab reads the pointer once and fetches HIGH
+  and names much later), and deletes the other generations (listed via `SnapshotStore.keys("globe/gen/")`). No
+  S3 lifecycle rule: an expiry could delete the live generation if ingest stalled. `SnapshotStore` gains
+  `delete(key)` (local and S3). The legacy `globe/LEO.bin.gz` / `globe/HIGH.bin.gz` keys are no longer written;
+  legacy files are left in place this release (stale but readable, so reverting the API still shows a globe);
+  a later piece deletes them.
 - **API** (api/app/api/routes.py):
   - `GET /api/globe/current` → the pointer JSON; `Cache-Control: public, max-age=60, s-maxage=60`; 404 when no
     generation exists yet.
   - `GET /api/globe/snapshot?group=LEO|HIGH&gen=<gen>` and `GET /api/globe/names?group=LEO|HIGH&gen=<gen>` →
     that generation's file; `Cache-Control: public, max-age=31536000, immutable`; ETag = content hash;
-    404 for an unknown generation; 422 for a `gen` not matching `^\d{8}T\d{6}Z-r\d+$` (never reaches the store).
+    404 for an unknown generation; 422 for a `gen` not matching `^[0-9]{8}T[0-9]{6}Z-r[0-9]+$` (ASCII digits
+    only; never reaches the store).
   - Without `gen`, both serve the current generation with `Cache-Control: public, max-age=60, s-maxage=300`,
     so tabs still running the previous frontend keep working through the deploy. `/names` without `gen` keeps
     its response shape `{"generated_at", "names"}`.
   - `/api/globe/names` no longer queries the database; `app/services/globe.py`'s `globe_names` moves into the
     ingest (used to build the names files).
 - **Frontend:** `api.current()`; `api.snapshot(group, gen)`; `api.names(group, gen)`. `GlobeSection` fetches
-  `/current` first, then that generation's snapshots; the name cache is keyed by generation. No refresh or
-  stale-data UI here — piece 3 builds on `/current` for that.
+  `/current` first, then that generation's snapshots; the name cache is keyed by generation. A versioned
+  snapshot or names request that returns 404 (the tab's generation has been deleted) is retried once without
+  `gen`, i.e. from the current generation. No refresh or stale-data UI here — piece 3 builds on `/current` for
+  that.
 - **Deploy order.** A new `publish-globe` job republishes the current database as a generation without fetching
   anything; the deploy workflow runs it right after migrations, so a generation exists minutes after deploy.
   In the window before that, `/current` returns 404, the un-versioned snapshot endpoint falls back to the
@@ -91,17 +101,19 @@ leaves mixed data versions). The other pieces: (2) origin protection, (3) freshn
 
 - Ingest (testcontainers Postgres): an older CelesTrak record does not replace a newer Space-Track one; a newer
   one does; equal epochs keep the stored row; a Space-Track run deletes only missing IDs; a short payload is
-  refused before any delete; two runs serialised by the lock (second waits, both end consistent); written and
-  matched counts reported.
+  refused before any delete; two runs serialised by the lock (second waits, both end consistent), also through
+  PgBouncer in transaction mode; written and matched counts reported.
 - Publication (local store): a failure writing any of the four files leaves `globe/current.json` and the
   previous generation untouched and fails the run; the pointer switches only after all four exist; cleanup
-  keeps current + previous (and anything newer) and removes older; names files contain exactly the snapshot's
-  IDs; `publish-globe` republishes without any upstream request.
+  keeps current + previous, anything newer and anything within 48 h, removes older, and leaves the legacy files;
+  an empty database publishes nothing; names files contain exactly the snapshot's IDs; `publish-globe`
+  republishes without any upstream request.
 - API: `/globe/current` 404 then 200; versioned snapshot/names return the generation's bytes with immutable
   caching, 404 for an unknown `gen` and 422 for a malformed one; un-versioned endpoints serve the current generation, and the
   legacy keys when no generation exists; `/names` no longer touches the database.
-- Web (vitest): pointer-first loading, fallback to un-versioned endpoints on a 404 pointer, name cache keyed by
-  generation. Existing e2e suite stays green (fixtures updated for `/current`).
+- Web (vitest): pointer-first loading, fallback to un-versioned endpoints on a 404 pointer, a versioned 404
+  retried once un-versioned, name cache keyed by generation. Existing e2e suite stays green (fixtures updated
+  for `/current`).
 
 ## Out of scope
 

@@ -47,9 +47,17 @@ its marker when zoomed in: Departure Mono 12 px, in the object's `GLOBE_COLORS` 
 `rgba(0,0,0,0.55)` pill (`.globe-label` in `globals.css`), offset 8 px up-right from the marker.
 They appear once the camera is closer than 2.2 Earth radii and disappear again past 2.4 (hysteresis
 so they don't flicker at the boundary), capped at 12 on screen at once, recomputed at most every
-250 ms. Names come from `GET /api/globe/names?group=LEO|HIGH`
-(`{"generated_at": str | null, "names": {"<norad_id>": "<name>"}}`, cached client-side per group in
-`lib/names.ts`), proxied like the rest of `/api/*`.
+250 ms. Names come from `GET /api/globe/names?group=LEO|HIGH&gen=<generation>`
+(`{"generated_at": str | null, "names": {"<norad_id>": "<name>"}}`, cached client-side per group
+and generation in `lib/names.ts`), proxied like the rest of `/api/*`.
+
+**Globe data loads from one published generation.** `GlobeSection` reads the pointer
+(`GET /api/globe/current`) once on load, then fetches that generation's snapshots
+(`/api/globe/snapshot?group=LEO|HIGH&gen=<generation>`, HIGH only when toggled on) and names, so
+positions and labels come from the same publication. The API keeps a generation for at least 48
+hours; if a long-open tab's generation is gone by the time it asks for HIGH or names, `lib/api.ts`
+retries the request once without `gen`, which serves the current generation. Before any generation
+exists (`/current` returns 404) the page uses the un-versioned endpoints.
 
 ## Tests
 

@@ -191,8 +191,11 @@ git push -u origin main
 ```
 
 From here on, every push to `main` that touches `api/`, `infra/` or the deploy workflow itself
-builds and pushes both images, runs `cdk deploy KesslerApp`, runs the `migrate` job, and smoke-tests
-the Function URL — see `.github/workflows/deploy.yml`. The `migrate` job runs right after the
+builds and pushes both images, runs `cdk deploy KesslerApp`, runs the `migrate` job, then the
+`publish-globe` job, and smoke-tests the Function URL — see `.github/workflows/deploy.yml`.
+`publish-globe` republishes the globe from the database as a new generation without fetching
+anything, so the new API has one to serve within minutes (on a database with no element sets yet it
+publishes nothing). The `migrate` job runs right after the
 new code goes live, not before, so migrations must stay backward-compatible with the previous
 release (the outgoing Lambda containers can still be warm and serving during that gap).
 
@@ -223,9 +226,16 @@ Visit `https://kessler.kudayyurter.dev` and confirm:
 
 - The globe renders with debris objects.
 - The charts load real data.
-- `curl -s -D - -o /dev/null "https://kessler.kudayyurter.dev/api/globe/snapshot"` shows
-  `x-vercel-cache: MISS` (or similar) on the first request and `x-vercel-cache: HIT` on the
-  second, within the snapshot's cache window.
+- `curl -s "https://kessler.kudayyurter.dev/api/globe/current"` returns the live generation
+  (`{"generation": "…", …}`). Request that generation's snapshot twice:
+
+  ```bash
+  GEN="$(curl -s https://kessler.kudayyurter.dev/api/globe/current | sed 's/.*"generation":"\([^"]*\)".*/\1/')"
+  curl -s -D - -o /dev/null "https://kessler.kudayyurter.dev/api/globe/snapshot?group=LEO&gen=$GEN"
+  ```
+
+  The first shows `x-vercel-cache: MISS` (or similar), the second `x-vercel-cache: HIT`, both with
+  `cache-control: public, max-age=31536000, immutable`.
 
 ## 11. Operations
 
@@ -253,6 +263,19 @@ aws lambda invoke --function-name kessler-jobs --cli-binary-format raw-in-base64
   --cli-read-timeout 900 --payload '{"job":"ingest-gp"}' out.json && cat out.json
 ```
 
+`ingest-gp` and `publish-globe` share a lock: a run that overlaps another waits for it, for at most
+8 minutes, then fails with `QueryCanceled` (and the jobs alarm fires). Rerun it once the other run
+has finished.
+
+**A failed globe publication** (the deploy's `publish-globe` step failed, or `ingest-gp` failed
+after writing the database): the site keeps serving the previous generation. Republish from the
+database, without fetching anything:
+
+```bash
+aws lambda invoke --function-name kessler-jobs --cli-binary-format raw-in-base64-out \
+  --cli-read-timeout 900 --payload '{"job":"publish-globe"}' out.json && cat out.json
+```
+
 **Read logs:**
 
 ```bash
@@ -268,6 +291,15 @@ since each deploy pushes 2: `api-<sha>` and `jobs-<sha>`):
 cd infra
 npx -y aws-cdk@2.1143.0 deploy KesslerApp --require-approval never \
   -c image_tag="<older commit sha>" -c alert_email="<alert email>"
+```
+
+**After reverting the API** to a release from before globe generations: that release reads only the
+legacy `globe/LEO.bin.gz` and `globe/HIGH.bin.gz`, which the newer releases left in place but
+stopped updating. Run `ingest-gp` once so they are fresh:
+
+```bash
+aws lambda invoke --function-name kessler-jobs --cli-binary-format raw-in-base64-out \
+  --cli-read-timeout 900 --payload '{"job":"ingest-gp"}' out.json && cat out.json
 ```
 
 **6-month AWS free-plan reminder:** before the AWS free plan ends, upgrade the account to a
