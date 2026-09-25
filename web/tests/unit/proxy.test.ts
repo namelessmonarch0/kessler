@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { proxyToApi, upstreamUrl } from "@/lib/proxy";
+import { proxyToApi, upstreamUrl, memoizeCredentials } from "@/lib/proxy";
 
 const ENV = { API_ORIGIN_URL: "http://api.local:8000/", ORIGIN_SECRET: "s3cret" };
 
@@ -70,5 +70,91 @@ describe("proxyToApi", () => {
     const [, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
     expect(init.method).toBe("POST");
     expect(new TextDecoder().decode(init.body as ArrayBuffer)).toBe("{\"q\":1}");
+  });
+});
+
+const CREDS = { accessKeyId: "AKIDTEST", secretAccessKey: "secret", sessionToken: "token-123" };
+const SIGNED_ENV = { API_ORIGIN_URL: "https://abc.lambda-url.us-east-2.on.aws/", AWS_ROLE_ARN: "arn:aws:iam::1:role/kessler-vercel-api" };
+
+function okFetch() {
+  return vi.fn(async () => Response.json({ ok: true }));
+}
+
+describe("signing", () => {
+  it("signs upstream requests for the lambda service in us-east-2 when a role is configured", async () => {
+    const fetchImpl = okFetch();
+    await proxyToApi(new Request("http://site/api/meta"), SIGNED_ENV, fetchImpl as unknown as typeof fetch, async () => CREDS);
+    const [, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
+    const sent = new Headers(init.headers);
+    expect(sent.get("authorization")).toMatch(/^AWS4-HMAC-SHA256 Credential=AKIDTEST\/\d{8}\/us-east-2\/lambda\/aws4_request, /);
+    expect(sent.get("x-amz-date")).toMatch(/^\d{8}T\d{6}Z$/);
+    expect(sent.get("x-amz-security-token")).toBe("token-123");
+  });
+
+  it("uses API_ORIGIN_REGION when set", async () => {
+    const fetchImpl = okFetch();
+    await proxyToApi(new Request("http://site/api/meta"), { ...SIGNED_ENV, API_ORIGIN_REGION: "eu-west-1" }, fetchImpl as unknown as typeof fetch, async () => CREDS);
+    const [, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
+    expect(new Headers(init.headers).get("authorization")).toContain("/eu-west-1/lambda/aws4_request");
+  });
+
+  it("does not sign without a role", async () => {
+    const fetchImpl = okFetch();
+    const credentials = vi.fn(async () => CREDS);
+    await proxyToApi(new Request("http://site/api/meta"), ENV, fetchImpl as unknown as typeof fetch, credentials);
+    const [, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
+    expect(new Headers(init.headers).get("authorization")).toBeNull();
+    expect(credentials).not.toHaveBeenCalled();
+  });
+
+  it("returns 502 when credentials cannot be obtained", async () => {
+    const fetchImpl = okFetch();
+    const res = await proxyToApi(new Request("http://site/api/meta"), SIGNED_ENV, fetchImpl as unknown as typeof fetch, async () => { throw new Error("sts down"); });
+    expect(res.status).toBe(502);
+    expect((await res.json()).error.code).toBe("unavailable");
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("refuses /api/ready without calling the API", async () => {
+    const fetchImpl = okFetch();
+    const res = await proxyToApi(new Request("http://site/api/ready"), ENV, fetchImpl as unknown as typeof fetch);
+    expect(res.status).toBe(404);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+});
+
+describe("memoizeCredentials", () => {
+  it("fetches once and reuses until five minutes before expiry", async () => {
+    let t = 0;
+    const source = vi.fn(async () => ({ ...CREDS, expiration: new Date(60 * 60_000) }));
+    const get = memoizeCredentials(source, () => t);
+    await Promise.all([get(), get(), get()]);
+    t = 54 * 60_000;
+    await get();
+    expect(source).toHaveBeenCalledTimes(1);
+    t = 56 * 60_000;
+    await get();
+    expect(source).toHaveBeenCalledTimes(2);
+  });
+
+  it("retries after a failure instead of caching it", async () => {
+    const source = vi.fn().mockRejectedValueOnce(new Error("sts down")).mockResolvedValue(CREDS);
+    const get = memoizeCredentials(source, () => 0);
+    await expect(get()).rejects.toThrow("sts down");
+    await expect(get()).resolves.toEqual(CREDS);
+    expect(source).toHaveBeenCalledTimes(2);
+  });
+
+  it("treats credentials without an expiry as valid for 15 minutes", async () => {
+    let t = 0;
+    const source = vi.fn(async () => CREDS);
+    const get = memoizeCredentials(source, () => t);
+    await get();
+    t = 14 * 60_000;
+    await get();
+    expect(source).toHaveBeenCalledTimes(1);
+    t = 16 * 60_000;
+    await get();
+    expect(source).toHaveBeenCalledTimes(2);
   });
 });
