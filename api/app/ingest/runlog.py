@@ -29,6 +29,8 @@ def advisory_lock(database_url: str, name: str) -> Iterator[None]:
     with connect(database_url) as lock_conn, lock_conn.transaction():
         # SET LOCAL: the limit ends with this transaction and never reaches a pooled connection.
         lock_conn.execute(sql.SQL("SET LOCAL statement_timeout = {}").format(wait_ms))
+        # This transaction idles for the whole run; Neon ends idle transactions after 5 minutes.
+        lock_conn.execute("SET LOCAL idle_in_transaction_session_timeout = 0")
         log.info("waiting for globe lock (%s)", name)
         lock_conn.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (name,))
         log.info("acquired globe lock (%s)", name)
