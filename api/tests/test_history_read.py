@@ -1,10 +1,14 @@
 import json
+import os
+import subprocess
+import sys
 from datetime import UTC, date, datetime
 
 from app.config import Settings
 from app.history import __main__ as cli
 from app.history.archive import archive_key, encode_records
 from app.history.read import read_history
+from tests.conftest import API_ROOT
 
 
 def omm(norad_id: str, epoch: str, **extra) -> dict:
@@ -54,6 +58,25 @@ def test_missing_days_and_empty_files_read_as_nothing(store):
     assert list(read_history(store, date(2026, 9, 25), date(2026, 9, 25))) == []
     # end < start
     assert list(read_history(store, date(2026, 9, 26), date(2026, 9, 25))) == []
+
+
+def test_dump_cli_does_not_traceback_on_a_broken_pipe(store):
+    # Enough records that the child's output exceeds the OS pipe buffer, so it is still writing
+    # (and hits EPIPE) after the parent below reads one line and closes its end early, the way
+    # `python -m app.history dump ... | head` does.
+    records = [omm(str(n), "2026-09-25T00:00:00", PAD="x" * 200) for n in range(3000)]
+    put_run(store, datetime(2026, 9, 25, 0, 41, tzinfo=UTC), 1, records)
+    env = dict(os.environ, SNAPSHOT_DIR=str(store.root), SNAPSHOT_BUCKET="", SSM_PREFIX="")
+    proc = subprocess.Popen(
+        [sys.executable, "-m", "app.history", "dump", "--from", "2026-09-25", "--to", "2026-09-25"],
+        cwd=API_ROOT, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+    )
+    proc.stdout.readline()
+    proc.stdout.close()
+    proc.wait(timeout=10)
+    stderr = proc.stderr.read()
+    assert "Traceback" not in stderr
+    assert proc.returncode == 1
 
 
 def test_dump_prints_json_lines(store, monkeypatch, capsys):
