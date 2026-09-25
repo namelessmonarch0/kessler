@@ -119,3 +119,14 @@ def test_s3_store_keys_lists_sorted_keys_under_a_prefix(aws):
         "history/gp/2026/09/25/a", "history/gp/2026/09/25/b",
     ]
     assert store.keys("history/gp/2026/09/26/") == []
+
+
+def test_s3_store_delete_removes_a_key_and_ignores_missing_ones(aws):
+    boto3.client("s3", region_name=REGION).create_bucket(
+        Bucket="snaps", CreateBucketConfiguration={"LocationConstraint": REGION}
+    )
+    store = S3SnapshotStore("snaps")
+    store.put("globe/gen/a/LEO.bin.gz", b"x")
+    store.delete("globe/gen/a/LEO.bin.gz")
+    store.delete("globe/gen/a/LEO.bin.gz")
+    assert store.keys("globe/") == []

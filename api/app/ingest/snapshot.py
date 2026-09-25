@@ -1,13 +1,16 @@
 import gzip
 import json
+import logging
 import struct
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol
 
 import psycopg
 
 from app.domain.orbits import OBJECT_TYPES
+
+log = logging.getLogger(__name__)
 
 MAGIC = b"LEO1"
 RECORD = struct.Struct("<IHBx10d")  # 88 bytes
@@ -25,6 +28,8 @@ class SnapshotStore(Protocol):
     def get(self, key: str) -> bytes | None: ...
 
     def keys(self, prefix: str) -> list[str]: ...
+
+    def delete(self, key: str) -> None: ...
 
 
 class LocalSnapshotStore:
@@ -50,9 +55,40 @@ class LocalSnapshotStore:
         found = (p.relative_to(self.root).as_posix() for p in start.rglob("*") if p.is_file())
         return sorted(k for k in found if k.startswith(prefix) and not k.endswith(".tmp"))
 
+    def delete(self, key: str) -> None:
+        (self.root / key).unlink(missing_ok=True)
+
 
 def snapshot_key(group: str) -> str:
+    """Legacy single-file snapshot, served only until the first generation is published."""
     return f"globe/{group}.bin.gz"
+
+
+POINTER_KEY = "globe/current.json"
+GENERATIONS_PREFIX = "globe/gen/"
+GENERATION_PATTERN = r"^\d{8}T\d{6}Z-r\d+$"
+
+
+def generation_id(generated_at: datetime, run_id: int) -> str:
+    t = generated_at.astimezone(UTC)
+    return f"{t:%Y%m%dT%H%M%S}Z-r{run_id}"
+
+
+def generation_key(generation: str, filename: str) -> str:
+    return f"{GENERATIONS_PREFIX}{generation}/{filename}"
+
+
+def snapshot_file(group: str) -> str:
+    return f"{group}.bin.gz"
+
+
+def names_file(group: str) -> str:
+    return f"names-{group}.json.gz"
+
+
+def read_pointer(store: SnapshotStore) -> dict | None:
+    data = store.get(POINTER_KEY)
+    return json.loads(data) if data is not None else None
 
 
 def pack_snapshot(rows: list[dict], generated_at: datetime) -> bytes:
@@ -110,3 +146,63 @@ def write_snapshots(
         store.put(snapshot_key(group), pack_snapshot(rows, generated_at))
         counts[group] = len(rows)
     return counts
+
+
+GROUP_ROWS_SQL = """
+    SELECT o.norad_id, o.name, o.owner, o.object_type, g.epoch, g.mean_motion, g.eccentricity,
+           g.inclination, g.raan, g.arg_pericenter, g.mean_anomaly, g.bstar,
+           g.mean_motion_dot, g.mean_motion_ddot
+    FROM gp_elements g JOIN objects o USING (norad_id)
+    WHERE o.decay_date IS NULL AND o.regime = ANY(%s)
+    ORDER BY o.norad_id
+"""
+
+
+def pack_names(rows: list[dict], generated_at: datetime) -> bytes:
+    body = {"generated_at": generated_at.isoformat(),
+            "names": {str(r["norad_id"]): r["name"] for r in rows}}
+    return gzip.compress(json.dumps(body, separators=(",", ":")).encode(), mtime=0)
+
+
+def publish_generation(
+    conn: psycopg.Connection, store: SnapshotStore, generated_at: datetime, run_id: int
+) -> dict[str, int]:
+    """Publishes the globe as one generation: both groups' snapshots and name lists, all read
+    in one database snapshot, then the pointer switch. A failure before the switch leaves the
+    previous generation live. Returns the object count per group."""
+    generation = generation_id(generated_at, run_id)
+    with conn.transaction():
+        conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
+        groups = {
+            group: conn.execute(GROUP_ROWS_SQL, (list(regimes),)).fetchall()
+            for group, regimes in SNAPSHOT_GROUPS.items()
+        }
+    for group, rows in groups.items():
+        snapshot_data = pack_snapshot(rows, generated_at)
+        store.put(generation_key(generation, snapshot_file(group)), snapshot_data)
+        store.put(generation_key(generation, names_file(group)), pack_names(rows, generated_at))
+    counts = {group: len(rows) for group, rows in groups.items()}
+    pointer = {
+        "generation": generation, "generated_at": generated_at.astimezone(UTC).isoformat(),
+        "groups": {group: {"count": n} for group, n in counts.items()},
+    }
+    store.put(POINTER_KEY, json.dumps(pointer, separators=(",", ":")).encode())
+    try:
+        remove_old_generations(store, generation)
+    except Exception:  # the new generation is live; the next publication retries the cleanup
+        log.warning("could not remove old globe generations", exc_info=True)
+    return counts
+
+
+def remove_old_generations(store: SnapshotStore, current: str) -> None:
+    """Deletes generations older than the one before `current` (kept for clients mid-load),
+    and the legacy single-file snapshots. Generations newer than `current` are never touched."""
+    keys = store.keys(GENERATIONS_PREFIX)
+    generation_of = {k: k[len(GENERATIONS_PREFIX):].split("/", 1)[0] for k in keys}
+    older = sorted({g for g in generation_of.values() if g < current})
+    keep = {current, *older[-1:]}
+    for key, generation in generation_of.items():
+        if generation not in keep and generation < current:
+            store.delete(key)
+    for group in SNAPSHOT_GROUPS:
+        store.delete(snapshot_key(group))

@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import UTC, date, datetime
 
 import psycopg
 
@@ -32,3 +32,16 @@ def seed_stats_world(conn: psycopg.Connection) -> None:
                   decay_date=date(2015, 8, 1), name="BETA R/B 50%_OFF", cospar_id="2015-010B")
     insert_object(conn, 4, object_type="PAY", owner="US", regime="GEO", first_seen_year=2005,
                   apogee=35800.0, perigee=35780.0, inclination=0.1, name="GAMMA GEO")
+
+
+GP_SQL = (
+    "INSERT INTO gp_elements (norad_id, epoch, mean_motion, eccentricity, inclination, raan, "
+    "arg_pericenter, mean_anomaly, bstar, mean_motion_dot, mean_motion_ddot, source) "
+    "VALUES (%s, %s, 15.5, 0.001, 53, 10, 20, 30, 0.0001, 0, 0, 'spacetrack')"
+)
+
+
+def add_gp(conn: psycopg.Connection, *norad_ids: int) -> None:
+    """A fixed element set (epoch 2026-09-22 UTC) for each object, for snapshot/globe tests."""
+    for norad_id in norad_ids:
+        conn.execute(GP_SQL, (norad_id, datetime(2026, 9, 22, tzinfo=UTC)))

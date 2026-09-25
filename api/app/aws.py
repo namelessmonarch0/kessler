@@ -45,3 +45,6 @@ class S3SnapshotStore:
             Bucket=self.bucket, Prefix=prefix
         )
         return sorted(obj["Key"] for page in pages for obj in page.get("Contents", []))
+
+    def delete(self, key: str) -> None:
+        self.client.delete_object(Bucket=self.bucket, Key=key)  # no error when already gone

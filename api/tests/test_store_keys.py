@@ -14,3 +14,11 @@ def test_local_keys_lists_sorted_keys_under_a_prefix(tmp_path):
 def test_local_keys_for_a_missing_prefix_is_empty(tmp_path):
     assert LocalSnapshotStore(tmp_path).keys("history/gp/2026/09/25/") == []
     assert LocalSnapshotStore(tmp_path / "not-created").keys("") == []
+
+
+def test_local_delete_removes_a_key_and_ignores_missing_ones(tmp_path):
+    store = LocalSnapshotStore(tmp_path)
+    store.put("globe/gen/a/LEO.bin.gz", b"x")
+    store.delete("globe/gen/a/LEO.bin.gz")
+    store.delete("globe/gen/a/LEO.bin.gz")  # already gone: no error
+    assert store.keys("globe/") == []
