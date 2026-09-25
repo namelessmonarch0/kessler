@@ -10,6 +10,9 @@ type Frames = { prev: Float32Array | null; next: Float32Array | null; prevTime: 
 export const LOD_DOTS_BELOW_PX = 330;
 export const LOD_ICONS_ABOVE_PX = 600;
 
+/** Radius (Earth radii) of the fixed bounding sphere for an object cloud: beyond the farthest HIGH orbit drawn. */
+export const OBJECT_CLOUD_RADIUS = 100;
+
 export const lodFade = (earthRadiusPx: number) =>
   Math.min(Math.max((earthRadiusPx - LOD_DOTS_BELOW_PX) / (LOD_ICONS_ABOVE_PX - LOD_DOTS_BELOW_PX), 0), 1);
 
@@ -53,6 +56,10 @@ export function buildObjectGeometry(records: OrbitRecord[]): THREE.BufferGeometr
   g.setAttribute("aDot", new THREE.BufferAttribute(dot, 1));
   g.setAttribute("aColor", new THREE.BufferAttribute(color, 3));
   g.setAttribute("aVisible", new THREE.BufferAttribute(new Float32Array(n), 1));
+  // three computes a bounding sphere from "position" to depth-sort objects (even with frustum culling off).
+  // An object that can't be propagated is NaN there — the shader hides it — which would make that sphere NaN
+  // and log an error, so give the cloud a fixed sphere (scene units, Earth radius 1) covering every orbit drawn.
+  g.boundingSphere = new THREE.Sphere(new THREE.Vector3(), OBJECT_CLOUD_RADIUS);
   return g;
 }
 

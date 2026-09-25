@@ -29,6 +29,14 @@ describe("buildObjectGeometry", () => {
     const c = kindColour("RB");
     expect(attr("aColor").slice(3, 6).map((v) => +v.toFixed(5))).toEqual([c.r, c.g, c.b].map((v) => +v.toFixed(5)));
   });
+  it("has a fixed bounding sphere, so a NaN position (an object that can't be propagated) never reaches three's computeBoundingSphere", () => {
+    const fresh = buildObjectGeometry(records);
+    expect(fresh.boundingSphere?.center.toArray()).toEqual([0, 0, 0]);
+    expect(fresh.boundingSphere?.radius).toBeGreaterThanOrEqual(100);
+    const nan = new Float32Array(12).fill(Number.NaN);
+    applyFrame(fresh, nan, nan);
+    expect(fresh.boundingSphere?.radius).toBeGreaterThanOrEqual(100); // not recomputed from the NaNs
+  });
   it("starts hidden until visibility is set", () => {
     expect(attr("aVisible")).toEqual([0, 0, 0, 0]);
     setVisibility(g, [true, false, true, true]);
