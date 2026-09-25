@@ -4,6 +4,7 @@ import { Canvas } from "@react-three/fiber";
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { simClock } from "@/lib/clock";
+import { nameCache } from "@/lib/names";
 import { loadSnapshot, type OrbitRecord } from "@/lib/snapshot";
 import { useExplorer } from "@/lib/store";
 import { subsolarPoint } from "@/lib/sun";
@@ -15,8 +16,8 @@ const NO_WEBGL_MESSAGE = "This device can't show the 3D globe (WebGL is unavaila
 
 type Status = "loading" | "ready" | "missing" | "error";
 
-async function fetchGroup(group: "LEO" | "HIGH"): Promise<OrbitRecord[] | null> {
-  const gz = await api.snapshot(group);
+async function fetchGroup(group: "LEO" | "HIGH", generation: string | undefined): Promise<OrbitRecord[] | null> {
+  const gz = await api.snapshot(group, generation);
   return gz ? (await loadSnapshot(gz)).records : null;
 }
 
@@ -59,6 +60,7 @@ export function GlobeSection() {
   const [leo, setLeo] = useState<OrbitRecord[] | null>(null);
   const [high, setHigh] = useState<OrbitRecord[] | null>(null);
   const [status, setStatus] = useState<Status>("loading");
+  const [source, setSource] = useState<{ generation: string | undefined } | null>(null);
   const [renderFailed, setRenderFailed] = useState(false);
   const [contextLost, setContextLost] = useState(false);
   // Whether the globe card is scrolled into view *and* the tab is foregrounded. Drives both the
@@ -86,7 +88,16 @@ export function GlobeSection() {
 
   useEffect(() => {
     let cancelled = false;
-    fetchGroup("LEO")
+    // Pointer first, so LEO, HIGH and the name labels all come from one published generation.
+    // No pointer yet (or it failed): fall back to the un-versioned endpoints.
+    api.current()
+      .catch(() => null)
+      .then((pointer) => {
+        const generation = pointer?.generation;
+        nameCache.useGeneration(generation);
+        if (!cancelled) setSource({ generation });
+        return fetchGroup("LEO", generation);
+      })
       .then((records) => {
         if (cancelled) return;
         setLeo(records);
@@ -99,9 +110,9 @@ export function GlobeSection() {
   }, []);
 
   useEffect(() => {
-    if (!wantHigh || high) return;
-    fetchGroup("HIGH").then(setHigh).catch(() => undefined);
-  }, [wantHigh, high]);
+    if (!wantHigh || high || !source) return;
+    fetchGroup("HIGH", source.generation).then(setHigh).catch(() => undefined);
+  }, [wantHigh, high, source]);
 
   // webglcontextlost is a native browser event (GPU reset, driver crash, too many contexts),
   // not a thrown error, so GlobeErrorBoundary can't see it — listen on the canvas directly and

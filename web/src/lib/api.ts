@@ -61,6 +61,12 @@ export interface BreakdownQuery {
   top?: number;
 }
 
+export interface GlobeCurrent {
+  generation: string;
+  generated_at: string;
+  groups: Record<"LEO" | "HIGH", { count: number }>;
+}
+
 export const api = {
   meta: () => getJson<Meta>("/meta"),
   timeseries: (q: TimeseriesQuery) => getJson<TimeseriesResponse>(`/stats/timeseries${buildQuery({ ...q })}`),
@@ -68,10 +74,17 @@ export const api = {
   events: () => getJson<BreakupEvent[]>("/events"),
   object: (id: number) => getJson<ObjectDetail>(`/objects/${id}`),
   search: (q: string) => getJson<SearchResult[]>(`/objects/search${buildQuery({ q })}`),
-  names: async (group: "LEO" | "HIGH") =>
-    (await getJson<{ generated_at: string | null; names: Record<string, string> }>(`/globe/names?group=${group}`)).names,
-  async snapshot(group: "LEO" | "HIGH"): Promise<Uint8Array | null> {
-    const res = await fetch(`/api/globe/snapshot?group=${group}`);
+  /** The published globe generation, or null before the first one exists. */
+  async current(): Promise<GlobeCurrent | null> {
+    const res = await fetch("/api/globe/current");
+    if (res.status === 404) return null;
+    if (!res.ok) throw await toError(res);
+    return (await res.json()) as GlobeCurrent;
+  },
+  names: async (group: "LEO" | "HIGH", generation?: string) =>
+    (await getJson<{ generated_at: string | null; names: Record<string, string> }>(`/globe/names${buildQuery({ group, gen: generation })}`)).names,
+  async snapshot(group: "LEO" | "HIGH", generation?: string): Promise<Uint8Array | null> {
+    const res = await fetch(`/api/globe/snapshot${buildQuery({ group, gen: generation })}`);
     if (res.status === 404) return null;
     if (!res.ok) throw await toError(res);
     return new Uint8Array(await res.arrayBuffer());

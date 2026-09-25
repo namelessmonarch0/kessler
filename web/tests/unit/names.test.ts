@@ -25,4 +25,18 @@ describe("name cache", () => {
     expect((await c.get("LEO"))?.get(1)).toBe("A");
     expect(fetcher).toHaveBeenCalledTimes(2);
   });
+
+  it("fetches names for the current generation and drops names from a previous generation", async () => {
+    const fetcher = vi.fn(async (_g: "LEO" | "HIGH", gen?: string) => ({ "1": gen ?? "none" }));
+    const c = createNameCache(fetcher);
+    c.useGeneration("g1");
+    expect((await c.get("LEO"))?.get(1)).toBe("g1");
+    c.useGeneration("g1"); // same generation: keeps the cache
+    expect(c.peek("LEO")?.get(1)).toBe("g1");
+    c.useGeneration("g2");
+    expect(c.peek("LEO")).toBeNull();
+    expect((await c.get("LEO"))?.get(1)).toBe("g2");
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(fetcher).toHaveBeenLastCalledWith("LEO", "g2");
+  });
 });

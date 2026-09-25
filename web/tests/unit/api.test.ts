@@ -4,7 +4,9 @@ import { ApiRequestError, api, buildQuery } from "@/lib/api";
 afterEach(() => vi.unstubAllGlobals());
 
 function stubFetch(response: Response) {
-  const fn = vi.fn(async () => response);
+  // Clone on each call: a Response body can only be read once, and some tests now drive multiple
+  // fetch() calls off one stub (e.g. two api.snapshot() calls sharing one stubbed response).
+  const fn = vi.fn(async () => response.clone());
   vi.stubGlobal("fetch", fn);
   return fn;
 }
@@ -58,5 +60,25 @@ describe("api", () => {
   it("throws ApiRequestError on names endpoint 500", async () => {
     stubFetch(Response.json({ error: { code: "server_error", message: "internal error" } }, { status: 500 }));
     await expect(api.names("HIGH")).rejects.toMatchObject({ status: 500, code: "server_error" });
+  });
+
+  it("reads the globe pointer and treats 404 as no generation yet", async () => {
+    stubFetch(Response.json({ error: { code: "not_found", message: "none" } }, { status: 404 }));
+    expect(await api.current()).toBeNull();
+    const pointer = { generation: "20260925T064112Z-r42", generated_at: "2026-09-25T06:41:12+00:00", groups: { LEO: { count: 1 }, HIGH: { count: 0 } } };
+    const fn = stubFetch(Response.json(pointer));
+    expect(await api.current()).toEqual(pointer);
+    expect((fn.mock.calls[0] as unknown[])[0]).toBe("/api/globe/current");
+  });
+
+  it("addresses snapshots and names by generation when given one", async () => {
+    const fn = stubFetch(new Response(new Uint8Array([1])));
+    await api.snapshot("LEO", "20260925T064112Z-r42");
+    expect((fn.mock.calls[0] as unknown[])[0]).toBe("/api/globe/snapshot?group=LEO&gen=20260925T064112Z-r42");
+    await api.snapshot("HIGH");
+    expect((fn.mock.calls[1] as unknown[])[0]).toBe("/api/globe/snapshot?group=HIGH");
+    const names = stubFetch(Response.json({ generated_at: null, names: { "1": "A" } }));
+    expect(await api.names("LEO", "20260925T064112Z-r42")).toEqual({ "1": "A" });
+    expect((names.mock.calls[0] as unknown[])[0]).toBe("/api/globe/names?group=LEO&gen=20260925T064112Z-r42");
   });
 });

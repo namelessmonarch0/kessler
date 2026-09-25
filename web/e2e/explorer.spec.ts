@@ -18,6 +18,7 @@ async function mockApi(page: Page, overrides: Record<string, { status: number; b
     const map: Record<string, string> = {
       "/meta": "api/meta.json", "/stats/timeseries": "api/timeseries.json", "/stats/breakdown": "api/breakdown.json",
       "/events": "api/events.json", "/objects/search": "api/search.json", "/objects/25544": "api/object.json",
+      "/globe/current": "api/current.json",
     };
     if (path === "/globe/snapshot") {
       return url.searchParams.get("group") === "LEO"
@@ -104,6 +105,17 @@ test("shows note when snapshot is missing", async ({ page }) => {
   await mockApi(page, { "/globe/snapshot": { status: 404 } });
   await page.goto("/");
   await expect(page.getByText("Orbit data not available yet.")).toBeVisible({ timeout: 10_000 });
+});
+
+test("loads globe snapshots from the published generation", async ({ page }) => {
+  const snapshotUrls: string[] = [];
+  page.on("request", (r) => {
+    if (r.url().includes("/api/globe/snapshot")) snapshotUrls.push(r.url());
+  });
+  await mockApi(page);
+  await page.goto("/");
+  await expect.poll(() => snapshotUrls.length).toBeGreaterThan(0);
+  expect(new URL(snapshotUrls[0]).searchParams.get("gen")).toBe("20260924T004100Z-r42");
 });
 
 test("phone: bottom sheet with tabs, no horizontal overflow", async ({ page }) => {
