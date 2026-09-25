@@ -118,6 +118,18 @@ test("loads globe snapshots from the published generation", async ({ page }) => 
   expect(new URL(snapshotUrls[0]).searchParams.get("gen")).toBe("20260924T004100Z-r42");
 });
 
+test("falls back to the un-versioned snapshot when the pointer fetch fails", async ({ page }) => {
+  const snapshotUrls: string[] = [];
+  page.on("request", (r) => {
+    if (r.url().includes("/api/globe/snapshot")) snapshotUrls.push(r.url());
+  });
+  await mockApi(page, { "/globe/current": { status: 500 } });
+  await page.goto("/");
+  await expect(page.locator("canvas")).toBeVisible();
+  await expect.poll(() => snapshotUrls.length).toBeGreaterThan(0);
+  expect(new URL(snapshotUrls[0]).searchParams.get("gen")).toBeNull();
+});
+
 test("phone: bottom sheet with tabs, no horizontal overflow", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await mockApi(page);

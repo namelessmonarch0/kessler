@@ -93,9 +93,10 @@ export function GlobeSection() {
     api.current()
       .catch(() => null)
       .then((pointer) => {
+        if (cancelled) return null;
         const generation = pointer?.generation;
         nameCache.useGeneration(generation);
-        if (!cancelled) setSource({ generation });
+        setSource({ generation });
         return fetchGroup("LEO", generation);
       })
       .then((records) => {
