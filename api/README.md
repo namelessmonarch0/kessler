@@ -21,11 +21,14 @@ Then open http://localhost:8000/docs.
 | Command | What it does | Production schedule |
 |---|---|---|
 | `python -m app.jobs ingest-satcat` | CelesTrak SATCAT → `objects`, then rebuilds `yearly_stats` | daily at 05:17 UTC |
-| `python -m app.jobs ingest-gp` | Space-Track GP (CelesTrak fallback) → `gp_elements` + globe snapshots | every 6 h at minute 41 |
+| `python -m app.jobs ingest-gp` | Space-Track GP (CelesTrak fallback) → archives changed element sets to `history/gp/`, then `gp_elements` + globe snapshots | every 6 h at minute 41 |
 | `python -m app.jobs rebuild-stats` | Recomputes `yearly_stats` from `objects` | after SATCAT |
 | `python -m app.jobs all` | All of the above | — |
 
 Every run is recorded in `ingest_runs`. A failed run never replaces good data.
+
+`python -m app.history dump --from YYYY-MM-DD --to YYYY-MM-DD` prints the archived element sets for
+that UTC date range as JSON Lines.
 
 ## Tests
 

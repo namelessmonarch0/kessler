@@ -11,11 +11,16 @@ def read_history(store: SnapshotStore, start: date, end: date) -> Iterator[dict]
     """Element sets archived on UTC days start..end (inclusive), in archive
     order.
 
+    `start`/`end` are the days records were *archived* on, not their epochs: a file can hold
+    epochs weeks old (a baseline run, a re-archived unknown object), so a record's epoch is not
+    guaranteed to fall inside the requested range.
+
     A record is yielded only if its epoch is later than the last one yielded
     for its NORAD ID: the recorder only archives epochs newer than the stored
     one, so repeats (a retried run, an object not yet in the catalogue) always
     carry an epoch already seen. Memory stays one entry per object however
-    long the range."""
+    long the range. This dedupe state is local to one call: it is not persisted across calls,
+    so two overlapping or adjacent calls can each yield the record that starts their range."""
     last: dict[int, datetime] = {}
     day = start
     while day <= end:
