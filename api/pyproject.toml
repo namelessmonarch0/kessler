@@ -29,6 +29,9 @@ package = false
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+markers = [
+  "pgbouncer: runs through a PgBouncer container in transaction mode (skipped if it cannot start)",
+]
 
 [tool.ruff]
 line-length = 100

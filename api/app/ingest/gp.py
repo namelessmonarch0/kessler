@@ -165,7 +165,7 @@ def run_ingest_gp(
     now: datetime | None = None,
 ) -> GpIngestResult:
     now = now or datetime.now(UTC)
-    with run_log(conn, "ingest_gp") as run, advisory_lock(conn, GLOBE_LOCK):
+    with run_log(conn, "ingest_gp") as run, advisory_lock(settings.database_url, GLOBE_LOCK):
         source, raw, records = fetch_gp(
             conn, spacetrack, celestrak, now, settings.min_gp_rows_spacetrack
         )

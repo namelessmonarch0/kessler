@@ -51,7 +51,7 @@ def run_job(
             result["ingest_gp"] = gp.written
             result["archived_gp"] = gp.archived
         if name == "publish-globe":
-            result["publish_globe"] = run_publish_globe(conn, store)
+            result["publish_globe"] = run_publish_globe(conn, store, settings.database_url)
         return result
 
 

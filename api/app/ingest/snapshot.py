@@ -197,12 +197,14 @@ def remove_old_generations(store: SnapshotStore, current: str, previous: str | N
 
 
 def run_publish_globe(
-    conn: psycopg.Connection, store: SnapshotStore, now: datetime | None = None
+    conn: psycopg.Connection, store: SnapshotStore, database_url: str,
+    now: datetime | None = None,
 ) -> int:
     """Republishes the globe from the database without fetching anything (after a deploy, or to
-    repair a failed publication). Takes the same lock as GP ingests."""
+    repair a failed publication). Takes the same lock as GP ingests, on its own connection to
+    `database_url`."""
     now = now or datetime.now(UTC)
-    with run_log(conn, "publish_globe") as run, advisory_lock(conn, GLOBE_LOCK):
+    with run_log(conn, "publish_globe") as run, advisory_lock(database_url, GLOBE_LOCK):
         run.source = "database"
         run.rows = sum(publish_generation(conn, store, now, run.id).values())
     return run.rows

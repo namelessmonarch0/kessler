@@ -43,7 +43,9 @@ class FakeCelesTrakGp(FakeCelesTrak):
 
 
 @pytest.fixture
-def catalog(conn):
+def catalog(conn, migrated, monkeypatch):
+    # run_ingest_gp takes the globe lock on its own connection, opened from settings.database_url.
+    monkeypatch.setattr(SETTINGS, "database_url", migrated)
     run_ingest_satcat(conn, celestrak=FakeCelesTrak(SAMPLE), settings=SETTINGS)
     return conn
 
@@ -104,7 +106,7 @@ def test_snapshots_are_published_as_one_generation(catalog, store):
 
 
 def test_too_few_spacetrack_rows_keeps_data(catalog, store):
-    s = Settings(min_satcat_rows=10, min_gp_rows_spacetrack=100, min_gp_rows_celestrak=1)
+    s = SETTINGS.model_copy(update={"min_gp_rows_spacetrack": 100})
     # A recent Space-Track success means the row-floor failure below must stay within the
     # 24h grace window: it raises rather than silently falling back to CelesTrak.
     run_ingest_gp(
@@ -124,7 +126,7 @@ def test_short_spacetrack_payload_after_24h_falls_back_to_celestrak(catalog, sto
     # No prior successful ingest_gp run at all: last_success is None, so the 24h grace
     # window never applies and a too-short Space-Track payload falls straight through
     # to CelesTrak within the same run (instead of just failing the run outright).
-    s = Settings(min_satcat_rows=10, min_gp_rows_spacetrack=100, min_gp_rows_celestrak=1)
+    s = SETTINGS.model_copy(update={"min_gp_rows_spacetrack": 100})
     n = run_ingest_gp(
         catalog, spacetrack=FakeSpaceTrack(ST_SAMPLE), celestrak=FakeCelesTrakGp(SAMPLE),
         store=store, settings=s, now=NOW,
@@ -366,7 +368,7 @@ def test_older_fallback_element_set_does_not_replace_newer(catalog, store):
 
 
 def test_spacetrack_run_removes_only_objects_missing_from_the_payload(catalog, store):
-    s = Settings(min_satcat_rows=10, min_gp_rows_spacetrack=2, min_gp_rows_celestrak=1)
+    s = SETTINGS.model_copy(update={"min_gp_rows_spacetrack": 2})
     kw = dict(celestrak=FakeCelesTrakGp(SAMPLE), store=store, settings=s)
     run_ingest_gp(catalog, spacetrack=FakeSpaceTrack(ST_SAMPLE), now=NOW, **kw)
     without_debris = [r for r in ST_SAMPLE if r["NORAD_CAT_ID"] != "29733"]
@@ -393,20 +395,19 @@ def test_payload_matching_too_few_objects_deletes_nothing(catalog, store):
     assert gp_rows(catalog) == before
 
 
-def test_overlapping_runs_wait_for_each_other(catalog, store, migrated):
+def test_overlapping_runs_wait_for_each_other(catalog, store, migrated, monkeypatch):
+    monkeypatch.setattr("app.ingest.runlog.LOCK_WAIT", timedelta(milliseconds=500))
     kw = dict(spacetrack=FakeSpaceTrack(ST_SAMPLE), celestrak=FakeCelesTrakGp(SAMPLE),
               store=store, settings=SETTINGS, now=NOW)
-    with connect(migrated) as other:
-        other.execute("SELECT pg_advisory_lock(hashtext('kessler.globe'))")  # another run in flight
-        catalog.execute("SET statement_timeout = '500ms'")
-        try:
-            with pytest.raises(psycopg.errors.QueryCanceled):
-                run_ingest_gp(catalog, **kw)
-        finally:
-            catalog.execute("RESET statement_timeout")
-        assert last_run(catalog)["status"] == "failed"
-        assert gp_rows(catalog) == {}  # it waited instead of writing alongside the other run
-    assert run_ingest_gp(catalog, **kw).written == 3  # the other session ended: the lock is free
+    with connect(migrated) as other, other.transaction():  # another run in flight
+        other.execute("SELECT pg_advisory_xact_lock(hashtext('kessler.globe'))")
+        with pytest.raises(psycopg.errors.QueryCanceled):
+            run_ingest_gp(catalog, **kw)
+        run = last_run(catalog)
+        assert run["status"] == "failed" and run["error"].startswith("QueryCanceled")
+        assert gp_rows(catalog) == {}  # it gave up waiting instead of writing alongside the other
+        assert archive_files(store) == [] and read_pointer(store) is None
+    assert run_ingest_gp(catalog, **kw).written == 3  # the other run committed: the lock is free
 
 
 class FailingHighStore(LocalSnapshotStore):

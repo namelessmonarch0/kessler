@@ -1,6 +1,7 @@
 import os
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 import pytest
 from alembic import command
@@ -38,16 +39,24 @@ def _no_dotenv(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(scope="session")
-def database_url() -> Iterator[str]:
-    """A throwaway Postgres. Set TEST_DATABASE_URL to reuse an existing empty database."""
-    url = os.environ.get("TEST_DATABASE_URL")
-    if url:
-        yield url
+def postgres_container() -> Iterator[Any]:
+    """The session's throwaway Postgres container, or None when TEST_DATABASE_URL names an
+    existing database."""
+    if os.environ.get("TEST_DATABASE_URL"):
+        yield None
         return
     from testcontainers.community.postgres import PostgresContainer
 
     with PostgresContainer("pgvector/pgvector:pg16", driver=None) as pg:
-        yield pg.get_connection_url()
+        yield pg
+
+
+@pytest.fixture(scope="session")
+def database_url(postgres_container) -> str:
+    """A throwaway Postgres. Set TEST_DATABASE_URL to reuse an existing empty database."""
+    if postgres_container is None:
+        return os.environ["TEST_DATABASE_URL"]
+    return postgres_container.get_connection_url()
 
 
 @pytest.fixture(scope="session")

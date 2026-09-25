@@ -2,30 +2,37 @@ import logging
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import psycopg
+from psycopg import sql
+
+from app.db import connect
 
 log = logging.getLogger(__name__)
 
 GLOBE_LOCK = "kessler.globe"
+LOCK_WAIT = timedelta(minutes=8)  # the jobs Lambda times out at 10
 
 
 @contextmanager
-def advisory_lock(conn: psycopg.Connection, name: str) -> Iterator[None]:
-    """Holds a session-level Postgres advisory lock for the block: runs that take the same lock
-    wait for each other (a manual run overlapping the schedule). The lock also ends with the
-    connection, so a crashed run cannot leave it held."""
-    conn.execute("SELECT pg_advisory_lock(hashtext(%s))", (name,))
-    try:
+def advisory_lock(database_url: str, name: str) -> Iterator[None]:
+    """Holds a Postgres advisory lock for the block: runs that take the same lock wait for each
+    other (a manual run overlapping the schedule). Production connects through Neon's pooler
+    (PgBouncer, transaction mode), where a session-level lock can land on a server connection other
+    clients share, so the lock is transaction-scoped instead, on a dedicated connection whose one
+    transaction stays open, pinned to one server connection, for the whole block. Ending that
+    transaction releases the lock on success and on error, and so does the connection dropping when
+    a run crashes. A run that cannot get the lock within LOCK_WAIT fails with
+    psycopg.errors.QueryCanceled instead of waiting until the Lambda times out."""
+    wait_ms = int(LOCK_WAIT.total_seconds() * 1000)
+    with connect(database_url) as lock_conn, lock_conn.transaction():
+        # SET LOCAL: the limit ends with this transaction and never reaches a pooled connection.
+        lock_conn.execute(sql.SQL("SET LOCAL statement_timeout = {}").format(wait_ms))
+        log.info("waiting for globe lock (%s)", name)
+        lock_conn.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (name,))
+        log.info("acquired globe lock (%s)", name)
         yield
-    finally:
-        # Never let a failed unlock mask the original exception: the session lock also ends
-        # when the connection closes, so a failed unlock here just leaves it held a bit longer.
-        try:
-            conn.execute("SELECT pg_advisory_unlock(hashtext(%s))", (name,))
-        except Exception:
-            log.warning("could not release advisory lock %s", name, exc_info=True)
 
 
 @dataclass
