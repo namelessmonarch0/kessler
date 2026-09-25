@@ -32,8 +32,9 @@ leaves mixed data versions). The other pieces: (2) origin protection, (3) freshn
   `norad_id` is in `objects`), checked before any delete. A short or garbage payload is still refused with the
   table untouched. (With the guard, rows written drops to only changed rows, so the old check would falsely
   fail.)
-- `write_gp` takes `pg_advisory_xact_lock` on a fixed key inside its transaction, serialising overlapping GP
-  ingests (a manual run and a scheduled one).
+- A session-level advisory lock (`kessler.globe`) is held for the whole GP ingest run — fetch, archive, database
+  write and publication — so overlapping runs (a manual run and a scheduled one) wait for each other rather than
+  interleave writes or pointer switches. The `publish-globe` job takes the same lock.
 - Counts: `write_gp` returns rows inserted or updated ("written"); the run log additionally records how many
   incoming records matched the catalog. `ingest_runs.rows` keeps the written count.
 - Consistent with the history archive, which already treats "epoch strictly newer than stored" as new.
@@ -60,8 +61,8 @@ leaves mixed data versions). The other pieces: (2) origin protection, (3) freshn
   - `GET /api/globe/current` → the pointer JSON; `Cache-Control: public, max-age=60, s-maxage=60`; 404 when no
     generation exists yet.
   - `GET /api/globe/snapshot?group=LEO|HIGH&gen=<gen>` and `GET /api/globe/names?group=LEO|HIGH&gen=<gen>` →
-    that generation's file; `Cache-Control: public, max-age=31536000, immutable`; ETag = generation + group;
-    404 for an unknown generation. `gen` is validated against `^\d{8}T\d{6}Z-r\d+$`.
+    that generation's file; `Cache-Control: public, max-age=31536000, immutable`; ETag = content hash;
+    404 for an unknown generation; 422 for a `gen` not matching `^\d{8}T\d{6}Z-r\d+$` (never reaches the store).
   - Without `gen`, both serve the current generation with `Cache-Control: public, max-age=60, s-maxage=300`,
     so tabs still running the previous frontend keep working through the deploy. `/names` without `gen` keeps
     its response shape `{"generated_at", "names"}`.
@@ -70,9 +71,11 @@ leaves mixed data versions). The other pieces: (2) origin protection, (3) freshn
 - **Frontend:** `api.current()`; `api.snapshot(group, gen)`; `api.names(group, gen)`. `GlobeSection` fetches
   `/current` first, then that generation's snapshots; the name cache is keyed by generation. No refresh or
   stale-data UI here — piece 3 builds on `/current` for that.
-- **Deploy order.** The API change ships before the first generation exists: `/current` returns 404 and the
-  un-versioned endpoints fall back to the legacy keys until a generation is published. The frontend treats a
-  404 from `/current` as "use the un-versioned endpoints".
+- **Deploy order.** A new `publish-globe` job republishes the current database as a generation without fetching
+  anything; the deploy workflow runs it right after migrations, so a generation exists minutes after deploy.
+  In the window before that, `/current` returns 404, the un-versioned snapshot endpoint falls back to the
+  legacy keys, `/names` returns 404 (labels appear once the generation exists), and the frontend treats a 404
+  or failed `/current` as "use the un-versioned endpoints".
 
 ## Units
 
@@ -92,9 +95,10 @@ leaves mixed data versions). The other pieces: (2) origin protection, (3) freshn
   matched counts reported.
 - Publication (local store): a failure writing any of the four files leaves `globe/current.json` and the
   previous generation untouched and fails the run; the pointer switches only after all four exist; cleanup
-  keeps current + previous and removes older; names files contain exactly the snapshot's IDs.
+  keeps current + previous (and anything newer) and removes older; names files contain exactly the snapshot's
+  IDs; `publish-globe` republishes without any upstream request.
 - API: `/globe/current` 404 then 200; versioned snapshot/names return the generation's bytes with immutable
-  caching and 404 for unknown or malformed `gen`; un-versioned endpoints serve the current generation, and the
+  caching, 404 for an unknown `gen` and 422 for a malformed one; un-versioned endpoints serve the current generation, and the
   legacy keys when no generation exists; `/names` no longer touches the database.
 - Web (vitest): pointer-first loading, fallback to un-versioned endpoints on a 404 pointer, name cache keyed by
   generation. Existing e2e suite stays green (fixtures updated for `/current`).
