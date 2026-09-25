@@ -1,6 +1,7 @@
 import gzip
 import json
 import logging
+import re
 import struct
 from datetime import UTC, datetime
 from pathlib import Path
@@ -171,6 +172,8 @@ def publish_generation(
     in one database snapshot, then the pointer switch. A failure before the switch leaves the
     previous generation live. Returns the object count per group."""
     generation = generation_id(generated_at, run_id)
+    previous_pointer = read_pointer(store)
+    previous = previous_pointer["generation"] if previous_pointer else None
     with conn.transaction():
         conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
         groups = {
@@ -188,20 +191,25 @@ def publish_generation(
     }
     store.put(POINTER_KEY, json.dumps(pointer, separators=(",", ":")).encode())
     try:
-        remove_old_generations(store, generation)
+        remove_old_generations(store, generation, previous)
     except Exception:  # the new generation is live; the next publication retries the cleanup
         log.warning("could not remove old globe generations", exc_info=True)
     return counts
 
 
-def remove_old_generations(store: SnapshotStore, current: str) -> None:
-    """Deletes generations older than the one before `current` (kept for clients mid-load),
-    and the legacy single-file snapshots. Generations newer than `current` are never touched."""
+def remove_old_generations(store: SnapshotStore, current: str, previous: str | None) -> None:
+    """Deletes every generation under `globe/gen/` except `current`, `previous` (the generation
+    the pointer named just before this publication, kept for clients mid-load), and any
+    generation newer than `current` (never touched). This also removes orphan generations that
+    were written but never reached by the pointer, such as one left behind by a failed
+    publication. A folder name under `globe/gen/` that does not match GENERATION_PATTERN is left
+    alone. The legacy single-file snapshots are always deleted."""
     keys = store.keys(GENERATIONS_PREFIX)
     generation_of = {k: k[len(GENERATIONS_PREFIX):].split("/", 1)[0] for k in keys}
-    older = sorted({g for g in generation_of.values() if g < current})
-    keep = {current, *older[-1:]}
+    keep = {current, *([previous] if previous is not None else [])}
     for key, generation in generation_of.items():
+        if not re.fullmatch(GENERATION_PATTERN, generation):
+            continue
         if generation not in keep and generation < current:
             store.delete(key)
     for group in SNAPSHOT_GROUPS:

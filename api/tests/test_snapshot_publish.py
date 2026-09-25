@@ -68,6 +68,33 @@ def test_a_failed_file_leaves_the_previous_generation_live(world, tmp_path, fail
     assert len(good.keys("globe/gen/20260925T064112Z-r1/")) == 4  # previous generation intact
 
 
+def test_a_partial_orphan_generation_is_deleted_by_a_later_publication(world, tmp_path):
+    add_gp(world, 1, 4)
+    good = LocalSnapshotStore(tmp_path)
+    publish_generation(world, good, T0, 1)
+    a = "20260925T064112Z-r1"
+    with pytest.raises(OSError, match="S3 unavailable"):
+        publish_generation(
+            world, FailingStore(tmp_path, "/HIGH.bin.gz"), T0 + timedelta(hours=6), 2
+        )
+    b = "20260925T124112Z-r2"  # orphan: never named by the pointer
+    assert sorted(good.keys(f"globe/gen/{b}/")) == [
+        generation_key(b, "LEO.bin.gz"), generation_key(b, "names-LEO.json.gz"),
+    ]
+    publish_generation(world, good, T0 + timedelta(hours=12), 3)
+    c = "20260925T184112Z-r3"
+    gens = {k.split("/")[2] for k in good.keys("globe/gen/")}
+    assert gens == {a, c}  # a kept as the previously live one, orphan b removed
+    assert read_pointer(good)["generation"] == c
+
+
+def test_a_stray_key_under_globe_gen_that_is_not_a_generation_survives_cleanup(world, store):
+    add_gp(world, 1, 4)
+    store.put("globe/gen/not-a-generation/x", b"stray")
+    publish_generation(world, store, T0, 1)
+    assert store.get("globe/gen/not-a-generation/x") == b"stray"
+
+
 def test_cleanup_keeps_current_previous_and_newer_and_drops_legacy_files(world, store):
     add_gp(world, 1, 4)
     store.put(snapshot_key("LEO"), b"legacy")
