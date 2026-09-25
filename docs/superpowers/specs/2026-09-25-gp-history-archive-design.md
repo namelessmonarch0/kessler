@@ -29,7 +29,9 @@ is expensive to recover later, so recording starts now.
    that NORAD ID, or the ID has no row there. The first run after deployment therefore archives everything
    (baseline). Records for IDs unknown to `objects` (typically new launches) are archived too; until SATCAT
    catches up they are re-archived every run, and the reader drops the repeats.
-3. Write the archive file for the run (only the new records).
+3. Write the archive file for the run (only the new records). A run with no new records still writes an empty
+   file, so every run leaves a trace. Records whose NORAD ID or epoch cannot be parsed are not archived (the
+   ingest already skips them) and are counted in the log.
 4. Then write `gp_elements` and the globe snapshots exactly as today.
 
 Ordering rule: archive first. If step 3 fails, the run fails before touching the database (the site keeps its
@@ -41,9 +43,10 @@ archives the same records again; duplicates are rare and the reader removes them
 
 - Existing snapshot bucket (removal policy RETAIN), prefix `history/`, written through the existing
   `SnapshotStore` (S3 in production, a local directory in development and tests).
-- Key: `history/gp/YYYY/MM/DD/HHMMSSZ-<source>.jsonl.gz` in UTC, from the run start time, e.g.
-  `history/gp/2026/09/25/064112Z-spacetrack.jsonl.gz`. Sources: `spacetrack`, `celestrak`; a future bulk
-  import uses `spacetrack-history`.
+- Key: `history/gp/YYYY/MM/DD/HHMMSSZ-<source>-r<run id>.jsonl.gz` in UTC, from the run start time and the
+  `ingest_runs` id, e.g. `history/gp/2026/09/25/064112Z-spacetrack-r1234.jsonl.gz`. The run id makes keys unique
+  even when two runs start in the same second. Sources: `spacetrack`, `celestrak`; a future bulk import uses
+  `spacetrack-history`.
 - Content: gzip JSON Lines, one element set per line, exactly as received: every field the source sent,
   including TLE lines and Space-Track's per-element-set `GP_ID`; nothing renamed or dropped (CelesTrak CSV rows
   are written as JSON objects of their columns).
@@ -52,14 +55,17 @@ archives the same records again; duplicates are rare and the reader removes them
 ### Units
 
 - `api/app/history/archive.py`: select new records (step 2), encode the file, compute the key, write it.
-- `api/app/history/read.py`: `read_history(store, start, end)` yields records in a UTC date range, deduplicated
-  on (NORAD ID, epoch), keeping the first occurrence in key order.
+- `api/app/history/read.py`: `read_history(store, start, end)` yields records in a UTC date range (inclusive
+  days) in key order, deduplicated per object: a record is yielded only if its epoch is later than the last one
+  yielded for that NORAD ID. The recorder only ever archives epochs newer than the stored one, so repeats (retries,
+  unknown objects re-archived) always carry an epoch already seen; memory stays one entry per object.
 - `python -m app.history dump --from YYYY-MM-DD --to YYYY-MM-DD`: prints JSON Lines to stdout for exploration.
-- `SnapshotStore` gains a `list(prefix)` method (S3 and local implementations) for the reader.
+- `SnapshotStore` gains a `keys(prefix)` method returning sorted keys (S3 and local implementations) for the
+  reader.
 
 ### Monitoring
 
-- The job result reports the archived count next to the written count, e.g.
+- `run_ingest_gp` returns `GpIngestResult(written, archived)`; the job result reports both, e.g.
   `{"ingest_gp": 30112, "archived_gp": 18450}`, and the run logs it.
 - Failures surface through the existing jobs error alarm; no new alarm.
 
@@ -72,8 +78,10 @@ On the existing testcontainers Postgres and local store:
 - A failing archive write leaves `gp_elements` unchanged and logs the run as failed.
 - CelesTrak fallback files carry the `celestrak` tag.
 - Reader: round-trips a file with every raw field intact; drops duplicates; respects the date range (inclusive
-  days, UTC); tolerates an empty range.
-- S3 store `list`/`put`/`get` against moto.
+  days, UTC); tolerates an empty range and empty files.
+- Two runs starting in the same second write two files; epochs written in different string formats for the same
+  instant compare equal; malformed records are skipped, not fatal.
+- S3 store `keys`/`put`/`get` against moto.
 
 ## Deployment
 
