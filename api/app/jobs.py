@@ -46,8 +46,10 @@ def run_job(
         if name in ("ingest-satcat", "rebuild-stats", "all"):
             result["rebuild_stats"] = run_rebuild_stats(conn)
         if name in ("ingest-gp", "all"):
-            result["ingest_gp"] = run_ingest_gp(conn, spacetrack=spacetrack, celestrak=celestrak,
-                                                store=store, settings=settings)
+            gp = run_ingest_gp(conn, spacetrack=spacetrack, celestrak=celestrak,
+                               store=store, settings=settings)
+            result["ingest_gp"] = gp.written
+            result["archived_gp"] = gp.archived
         return result
 
 

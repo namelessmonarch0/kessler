@@ -4,11 +4,13 @@ import logging
 from collections.abc import Iterable, Mapping
 from dataclasses import astuple, dataclass, fields
 from datetime import UTC, datetime, timedelta
+from typing import NamedTuple
 
 import psycopg
 
 from app.config import Settings
 from app.domain.orbits import parse_epoch
+from app.history.archive import archive_gp
 from app.ingest.runlog import last_success, run_log
 from app.ingest.snapshot import SnapshotStore, write_snapshots
 from app.ingest.sources import SourceError
@@ -33,6 +35,11 @@ class GpRecord:
 
 
 GP_COLUMNS = tuple(f.name for f in fields(GpRecord))
+
+
+class GpIngestResult(NamedTuple):
+    written: int  # element sets written to gp_elements
+    archived: int  # new element sets written to the history archive
 
 
 def parse_gp_records(items: Iterable[Mapping[str, str | None]]) -> list[GpRecord]:
@@ -113,25 +120,28 @@ def write_gp(
 
 def fetch_gp(
     conn: psycopg.Connection, spacetrack, celestrak, now: datetime, min_spacetrack_rows: int
-) -> tuple[str, list[GpRecord]]:
-    """Fetches GP records, preferring Space-Track. The Space-Track row floor is applied
-    here, inside the try, so a short/garbage payload (no HTTP error, just too few rows)
+) -> tuple[str, list[Mapping], list[GpRecord]]:
+    """Fetches GP records, preferring Space-Track, and returns (source, raw records, parsed
+    records); the raw records are what the history archive keeps. The Space-Track row floor is
+    applied here, inside the try, so a short/garbage payload (no HTTP error, just too few rows)
     goes through the same last-success/24h fallback rule as an outright fetch failure."""
     if spacetrack is not None:
         try:
-            records = parse_gp_records(spacetrack.gp_all_on_orbit())
+            raw = spacetrack.gp_all_on_orbit()
+            records = parse_gp_records(raw)
             if len(records) < min_spacetrack_rows:
                 raise SourceError(
                     f"spacetrack returned {len(records)} GP records, expected at least "
                     f"{min_spacetrack_rows}; keeping previous data"
                 )
-            return "spacetrack", records
+            return "spacetrack", raw, records
         except SourceError:
             last_ok = last_success(conn, "ingest_gp", "spacetrack")
             if last_ok is not None and now - last_ok < FALLBACK_AFTER:
                 raise
             log.warning("Space-Track unavailable for over 24 h; falling back to CelesTrak")
-    return "celestrak", parse_gp_csv(celestrak.gp_active_csv())
+    raw = list(csv.DictReader(io.StringIO(celestrak.gp_active_csv())))
+    return "celestrak", raw, parse_gp_records(raw)
 
 
 def run_ingest_gp(
@@ -142,10 +152,10 @@ def run_ingest_gp(
     store: SnapshotStore,
     settings: Settings,
     now: datetime | None = None,
-) -> int:
+) -> GpIngestResult:
     now = now or datetime.now(UTC)
     with run_log(conn, "ingest_gp") as run:
-        source, records = fetch_gp(
+        source, raw, records = fetch_gp(
             conn, spacetrack, celestrak, now, settings.min_gp_rows_spacetrack
         )
         run.source = source
@@ -154,10 +164,14 @@ def run_ingest_gp(
                 f"celestrak returned {len(records)} GP records, expected at least "
                 f"{settings.min_gp_rows_celestrak}; keeping previous data"
             )
+        # History first: it is computed against the stored epochs, and if it cannot be written the
+        # run fails here with gp_elements untouched, so the next run archives the same changes.
+        archived = archive_gp(conn, store, raw, source=source, run_at=now, run_id=run.id)
         # Space-Track is the full catalog: replace. CelesTrak is partial: upsert only.
         run.rows = write_gp(
             conn, records, source, replace=(source == "spacetrack"),
             minimum=settings.min_gp_rows_spacetrack if source == "spacetrack" else None,
         )
         write_snapshots(conn, store, now)
-    return run.rows
+    log.info("ingest_gp wrote %d element sets and archived %d new ones", run.rows, archived)
+    return GpIngestResult(written=run.rows, archived=archived)

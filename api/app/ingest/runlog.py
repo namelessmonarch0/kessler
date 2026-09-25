@@ -10,6 +10,7 @@ import psycopg
 class RunState:
     source: str
     rows: int | None = None
+    id: int | None = None
 
 
 @contextmanager
@@ -20,7 +21,7 @@ def run_log(conn: psycopg.Connection, job: str, source: str = "pending") -> Iter
         "INSERT INTO ingest_runs (job, source, status) VALUES (%s, %s, 'running') RETURNING id",
         (job, source),
     ).fetchone()["id"]
-    state = RunState(source=source)
+    state = RunState(source=source, id=run_id)
     try:
         yield state
     except Exception as exc:

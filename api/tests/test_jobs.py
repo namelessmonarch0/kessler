@@ -32,7 +32,7 @@ def test_run_all_end_to_end(conn, migrated, tmp_path):
     with httpx.Client() as http:
         result = run_job("all", settings, store=store, http=http)
     assert result == {"ingest_satcat": 20, "rebuild_stats": result["rebuild_stats"],
-                      "ingest_gp": 3}
+                      "ingest_gp": 3, "archived_gp": 4}
     assert result["rebuild_stats"] > 0
     assert store.get(snapshot_key("LEO")) is not None
 

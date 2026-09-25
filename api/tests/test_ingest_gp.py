@@ -1,10 +1,13 @@
+import csv
+import io
 import json
 from datetime import UTC, datetime, timedelta
 
 import pytest
 
 from app.config import Settings
-from app.ingest.gp import parse_gp_csv, parse_gp_records, run_ingest_gp
+from app.history.archive import HISTORY_PREFIX, decode_records
+from app.ingest.gp import GpIngestResult, parse_gp_csv, parse_gp_records, run_ingest_gp
 from app.ingest.satcat import run_ingest_satcat
 from app.ingest.snapshot import (
     LocalSnapshotStore,
@@ -69,7 +72,7 @@ def test_spacetrack_ingest_replaces_and_skips_unknown_objects(catalog, store):
         catalog, spacetrack=FakeSpaceTrack(ST_SAMPLE), celestrak=FakeCelesTrakGp(SAMPLE),
         store=store, settings=SETTINGS, now=NOW,
     )
-    assert n == 3
+    assert n.written == 3
     rows = gp_rows(catalog)
     assert set(rows) == {25544, 24876, 29733}
     assert rows[25544]["source"] == "spacetrack"
@@ -118,7 +121,7 @@ def test_short_spacetrack_payload_after_24h_falls_back_to_celestrak(catalog, sto
         catalog, spacetrack=FakeSpaceTrack(ST_SAMPLE), celestrak=FakeCelesTrakGp(SAMPLE),
         store=store, settings=s, now=NOW,
     )
-    assert n == 2
+    assert n.written == 2
     rows = gp_rows(catalog)
     assert set(rows) == {25544, 24876}
     assert rows[25544]["source"] == "celestrak"
@@ -156,7 +159,7 @@ def test_celestrak_fallback_upserts_without_deleting(catalog, store):
         celestrak=FakeCelesTrakGp(SAMPLE), store=store, settings=SETTINGS,
         now=datetime.now(UTC),
     )
-    assert n == 2
+    assert n.written == 2
     rows = gp_rows(catalog)
     assert set(rows) == {25544, 24876, 29733}          # debris 29733 kept
     assert rows[25544]["source"] == "celestrak"          # refreshed
@@ -205,4 +208,102 @@ def test_no_spacetrack_credentials_uses_celestrak(catalog, store):
         catalog, spacetrack=None, celestrak=FakeCelesTrakGp(SAMPLE),
         store=store, settings=SETTINGS, now=NOW,
     )
-    assert n == 2
+    assert n.written == 2
+
+
+class FailingHistoryStore(LocalSnapshotStore):
+    """A store whose history writes fail (S3 down, permissions), while snapshots still work."""
+
+    def put(self, key: str, data: bytes) -> None:
+        if key.startswith(HISTORY_PREFIX):
+            raise OSError("S3 unavailable")
+        super().put(key, data)
+
+
+def archive_files(store) -> list[str]:
+    return store.keys(HISTORY_PREFIX)
+
+
+def advanced(sample: list[dict], norad_id: int, epoch: str) -> list[dict]:
+    """The sample with one object's element set replaced by a newer one."""
+    return [dict(r, EPOCH=epoch) if r["NORAD_CAT_ID"] == str(norad_id) else r for r in sample]
+
+
+NEWER_ISS = advanced(ST_SAMPLE, 25544, "2026-09-23T06:00:00.000000")
+
+
+def last_run(conn):
+    return conn.execute("SELECT * FROM ingest_runs ORDER BY id DESC LIMIT 1").fetchone()
+
+
+def test_first_run_archives_every_record_as_received(catalog, store):
+    result = run_ingest_gp(
+        catalog, spacetrack=FakeSpaceTrack(ST_SAMPLE), celestrak=FakeCelesTrakGp(SAMPLE),
+        store=store, settings=SETTINGS, now=NOW,
+    )
+    # 123456 is unknown to the catalogue: not written to gp_elements, but archived.
+    assert result == GpIngestResult(written=3, archived=4)
+    [key] = archive_files(store)
+    assert key == f"history/gp/2026/09/23/120000Z-spacetrack-r{last_run(catalog)['id']}.jsonl.gz"
+    assert decode_records(store.get(key)) == ST_SAMPLE
+
+
+def test_later_runs_archive_only_new_element_sets(catalog, store):
+    kw = dict(celestrak=FakeCelesTrakGp(SAMPLE), store=store, settings=SETTINGS)
+    run_ingest_gp(catalog, spacetrack=FakeSpaceTrack(ST_SAMPLE), now=NOW, **kw)
+    second = run_ingest_gp(
+        catalog, spacetrack=FakeSpaceTrack(NEWER_ISS), now=NOW + timedelta(hours=6), **kw
+    )
+    assert second.archived == 2
+    records = decode_records(store.get(archive_files(store)[1]))
+    assert [r["NORAD_CAT_ID"] for r in records] == ["25544", "123456"]  # changed + still unknown
+    third = run_ingest_gp(
+        catalog, spacetrack=FakeSpaceTrack(NEWER_ISS), now=NOW + timedelta(hours=12), **kw
+    )
+    assert third.archived == 1  # nothing changed; only the unknown object repeats
+    assert len(archive_files(store)) == 3
+
+
+def test_archive_write_failure_keeps_database_and_fails_the_run(catalog, store, tmp_path):
+    run_ingest_gp(
+        catalog, spacetrack=FakeSpaceTrack(ST_SAMPLE), celestrak=FakeCelesTrakGp(SAMPLE),
+        store=store, settings=SETTINGS, now=NOW,
+    )
+    before = gp_rows(catalog)
+    with pytest.raises(OSError, match="S3 unavailable"):
+        run_ingest_gp(
+            catalog, spacetrack=FakeSpaceTrack(NEWER_ISS), celestrak=FakeCelesTrakGp(SAMPLE),
+            store=FailingHistoryStore(tmp_path), settings=SETTINGS,
+            now=NOW + timedelta(hours=6),
+        )
+    assert gp_rows(catalog) == before
+    run = last_run(catalog)
+    assert run["status"] == "failed" and "S3 unavailable" in run["error"]
+    # The next good run still archives the element set the failed run missed.
+    retry = run_ingest_gp(
+        catalog, spacetrack=FakeSpaceTrack(NEWER_ISS), celestrak=FakeCelesTrakGp(SAMPLE),
+        store=store, settings=SETTINGS, now=NOW + timedelta(hours=12),
+    )
+    records = decode_records(store.get(archive_files(store)[-1]))
+    assert retry.archived == 2 and records[0]["EPOCH"] == "2026-09-23T06:00:00.000000"
+
+
+def test_runs_starting_in_the_same_second_keep_separate_files(catalog, store):
+    for _ in range(2):
+        run_ingest_gp(
+            catalog, spacetrack=FakeSpaceTrack(ST_SAMPLE), celestrak=FakeCelesTrakGp(SAMPLE),
+            store=store, settings=SETTINGS, now=NOW,
+        )
+    assert len(archive_files(store)) == 2
+
+
+def test_celestrak_fallback_is_archived_with_its_tag(catalog, store):
+    result = run_ingest_gp(
+        catalog, spacetrack=None, celestrak=FakeCelesTrakGp(SAMPLE),
+        store=store, settings=SETTINGS, now=NOW,
+    )
+    [key] = archive_files(store)
+    assert key.endswith(f"-celestrak-r{last_run(catalog)['id']}.jsonl.gz")
+    records = decode_records(store.get(key))
+    assert records == list(csv.DictReader(io.StringIO(CT_SAMPLE)))  # whole CSV rows, as received
+    assert result.archived == len(records) == 2
