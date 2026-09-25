@@ -8,6 +8,7 @@ from datetime import UTC, datetime, timedelta
 import psycopg
 
 from app.config import Settings
+from app.domain.orbits import parse_epoch
 from app.ingest.runlog import last_success, run_log
 from app.ingest.snapshot import SnapshotStore, write_snapshots
 from app.ingest.sources import SourceError
@@ -34,11 +35,6 @@ class GpRecord:
 GP_COLUMNS = tuple(f.name for f in fields(GpRecord))
 
 
-def _epoch(value: str) -> datetime:
-    dt = datetime.fromisoformat(value)
-    return dt if dt.tzinfo else dt.replace(tzinfo=UTC)
-
-
 def parse_gp_records(items: Iterable[Mapping[str, str | None]]) -> list[GpRecord]:
     """Parses OMM mappings (Space-Track JSON objects or CelesTrak CSV rows share field names)."""
     out: list[GpRecord] = []
@@ -48,7 +44,7 @@ def parse_gp_records(items: Iterable[Mapping[str, str | None]]) -> list[GpRecord
             out.append(
                 GpRecord(
                     norad_id=int(d["NORAD_CAT_ID"]),
-                    epoch=_epoch(d["EPOCH"]),
+                    epoch=parse_epoch(d["EPOCH"]),
                     mean_motion=float(d["MEAN_MOTION"]),
                     eccentricity=float(d["ECCENTRICITY"]),
                     inclination=float(d["INCLINATION"]),

@@ -1,3 +1,5 @@
+from datetime import UTC, datetime
+
 OBJECT_TYPES = ("PAY", "R/B", "DEB", "UNK")
 REGIMES = ("LEO", "MEO", "GEO", "HEO", "OTHER")
 
@@ -22,6 +24,13 @@ ATTRIBUTION = "Data: USSPACECOM via Space-Track.org; CelesTrak."
 
 LEO_MAX_APOGEE_KM = 2000.0
 GEO_PERIGEE_KM = (35000.0, 36500.0)
+
+
+def parse_epoch(value: str) -> datetime:
+    """An OMM epoch as a timezone-aware UTC datetime. Space-Track and CelesTrak send naive ISO-8601
+    times that are UTC; explicit offsets and a trailing Z are honoured."""
+    dt = datetime.fromisoformat(value)
+    return dt.astimezone(UTC) if dt.tzinfo else dt.replace(tzinfo=UTC)
 
 
 def classify_regime(apogee: float | None, perigee: float | None, orbit_center: str | None) -> str:
