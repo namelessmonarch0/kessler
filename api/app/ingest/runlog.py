@@ -1,9 +1,12 @@
+import logging
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 
 import psycopg
+
+log = logging.getLogger(__name__)
 
 GLOBE_LOCK = "kessler.globe"
 
@@ -17,7 +20,12 @@ def advisory_lock(conn: psycopg.Connection, name: str) -> Iterator[None]:
     try:
         yield
     finally:
-        conn.execute("SELECT pg_advisory_unlock(hashtext(%s))", (name,))
+        # Never let a failed unlock mask the original exception: the session lock also ends
+        # when the connection closes, so a failed unlock here just leaves it held a bit longer.
+        try:
+            conn.execute("SELECT pg_advisory_unlock(hashtext(%s))", (name,))
+        except Exception:
+            log.warning("could not release advisory lock %s", name, exc_info=True)
 
 
 @dataclass

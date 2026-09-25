@@ -398,5 +398,6 @@ def test_overlapping_runs_wait_for_each_other(catalog, store, migrated):
                 run_ingest_gp(catalog, **kw)
         finally:
             catalog.execute("RESET statement_timeout")
+        assert last_run(catalog)["status"] == "failed"
         assert gp_rows(catalog) == {}  # it waited instead of writing alongside the other run
     assert run_ingest_gp(catalog, **kw).written == 3  # the other session ended: the lock is free
