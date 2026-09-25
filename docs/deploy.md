@@ -223,7 +223,7 @@ workflow**.
   - `ORIGIN_SECRET` = the value generated in step 3.
 - Deploy. If the deployment shows **"Canceled by Ignored Build Step"**, that's `ignoreCommand`
   in `web/vercel.json` deciding this build has no relevant changes — click **Redeploy** to force
-  it anyway.
+  it anyway (`ignoreCommand` always builds a redeploy of the commit that is already live).
 - Add the custom domain `kessler.kudayyurter.dev` to the project. Vercel will show a pending DNS
   record; the owner then adds, at the domain registrar for `kudayyurter.dev`:
 
@@ -352,10 +352,11 @@ Full design: `docs/superpowers/specs/2026-09-25-origin-protection-design.md`.
   ```
 
   or the dashboard: **Deployments** → that deployment's **⋯** → **Redeploy**. Wait for the new
-  deployment to be **Ready**; if it ends **Canceled** by the Ignored Build Step, redeploy from the
-  dashboard with **Use project's Ignore Build Step** unchecked. (`redeploy` has no `--prod` flag.)
-  An empty push to `main` does not work: `web/vercel.json`'s `ignoreCommand` cancels every build
-  whose commits change nothing under `web/`.
+  deployment to be **Ready**. `web/vercel.json`'s `ignoreCommand` builds a redeploy of the commit
+  that is already live; if it ends **Canceled** anyway, redeploy from the dashboard with **Use
+  project's Ignore Build Step** unchecked. (`redeploy` has no `--prod` flag.) An empty push to
+  `main` does not work: `ignoreCommand` cancels every build whose commits change nothing under
+  `web/`.
 
 ### Rollout (three pushes)
 
@@ -393,14 +394,21 @@ Full design: `docs/superpowers/specs/2026-09-25-origin-protection-design.md`.
 
    If neither line appears, the deployment you're reading was built without `AWS_ROLE_ARN`.
 
-   **Rollback:** Instant Rollback to the previous production deployment — the dashboard's
-   **Instant Rollback**, or `npx vercel rollback <previous production deployment URL>` (Hobby can
-   only roll back to the immediately previous one: the deployment from before the redeploy).
-   Unsetting `AWS_ROLE_ARN` alone changes nothing, since a running deployment keeps the
-   environment it was built with; after the rollback, remove it too (`npx vercel env rm
-   AWS_ROLE_ARN production`) so the next build doesn't pick it up. A rollback also turns off
-   auto-assignment of production domains: new pushes won't go live until you undo it (the
-   dashboard's **Undo Rollback**, or `npx vercel promote <deployment URL>`).
+   **Rollback:** Instant Rollback to the previous production deployment (Hobby can only roll
+   back to the immediately previous one: the deployment from before the redeploy). Unsetting
+   `AWS_ROLE_ARN` alone changes nothing, since a running deployment keeps the environment it was
+   built with; after the rollback, remove it too so the next build doesn't pick it up:
+
+   ```bash
+   cd web
+   npx vercel rollback <previous production deployment URL> --scope kudayyurter
+   npx vercel env rm AWS_ROLE_ARN production --scope kudayyurter
+   cd ..
+   ```
+
+   (or the dashboard's **Instant Rollback**). A rollback also turns off auto-assignment of
+   production domains: new pushes won't go live until you undo it (the dashboard's **Undo
+   Rollback**, or `npx vercel promote <deployment URL> --scope kudayyurter` from `web/`).
 
    **Before step 2** (read-only, your admin login): check that the role may invoke `kessler-api`
    through its URL — both actions must be `allowed`:
@@ -441,7 +449,8 @@ Full design: `docs/superpowers/specs/2026-09-25-origin-protection-design.md`.
    with no site data meanwhile. Faster, with your admin login (seconds):
 
    ```bash
-   aws lambda update-function-url-config --function-name kessler-api --auth-type NONE
+   aws lambda update-function-url-config --function-name kessler-api --auth-type NONE \
+     --invoke-mode RESPONSE_STREAM
    aws lambda add-permission --function-name kessler-api --statement-id public-url \
      --action lambda:InvokeFunctionUrl --principal "*" --function-url-auth-type NONE
    aws lambda add-permission --function-name kessler-api --statement-id public-invoke \
