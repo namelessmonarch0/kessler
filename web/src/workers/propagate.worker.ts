@@ -1,11 +1,15 @@
 import type { SatRec } from "satellite.js";
-import { propagateAll, recordToSatrec } from "@/lib/orbit";
+import { orbitPath, propagateAll, recordToSatrec } from "@/lib/orbit";
 import type { OrbitRecord } from "@/lib/snapshot";
 
-export type WorkerIn = { kind: "load"; records: OrbitRecord[] } | { kind: "tick"; timeMs: number; id: number };
+export type WorkerIn =
+  | { kind: "load"; records: OrbitRecord[] }
+  | { kind: "tick"; timeMs: number; id: number }
+  | { kind: "path"; id: number; index: number; centerMs: number; steps: number };
 export type WorkerOut =
   | { kind: "loaded"; count: number; valid: number }
-  | { kind: "positions"; id: number; timeMs: number; positions: Float32Array };
+  | { kind: "positions"; id: number; timeMs: number; positions: Float32Array }
+  | { kind: "path"; id: number; positions: Float32Array };
 
 export function createHandler(post: (msg: WorkerOut, transfer?: Transferable[]) => void) {
   let satrecs: (SatRec | null)[] | null = null;
@@ -16,6 +20,11 @@ export function createHandler(post: (msg: WorkerOut, transfer?: Transferable[]) 
       return;
     }
     if (!satrecs) return;
+    if (msg.kind === "path") {
+      const positions = orbitPath(satrecs[msg.index] ?? null, msg.centerMs, msg.steps);
+      post({ kind: "path", id: msg.id, positions }, [positions.buffer]);
+      return;
+    }
     const positions = new Float32Array(satrecs.length * 3);
     propagateAll(satrecs, new Date(msg.timeMs), positions);
     post({ kind: "positions", id: msg.id, timeMs: msg.timeMs, positions }, [positions.buffer]);

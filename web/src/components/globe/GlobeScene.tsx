@@ -10,11 +10,11 @@ import { simClock } from "@/lib/clock";
 import type { OrbitRecord } from "@/lib/snapshot";
 import { useExplorer } from "@/lib/store";
 import { useIsMobile } from "@/lib/useIsMobile";
-import { sunDirectionScene } from "@/lib/sun";
 import { Earth } from "@/components/globe/Earth";
 import { findPosition, flyTo, type Locator } from "@/components/globe/flyTo";
 import { LabelDriver } from "@/components/globe/LabelDriver";
 import { Objects, type LabelSource } from "@/components/globe/Objects";
+import { Picker } from "@/components/globe/Picker";
 
 declare global {
   interface Window {
@@ -50,7 +50,6 @@ export function GlobeScene({
   }
   const camera = useThree((s) => s.camera) as THREE.PerspectiveCamera;
   const size = useThree((s) => s.size);
-  const sun = useRef<THREE.DirectionalLight>(null);
   const controls = useRef<OrbitControlsImpl>(null);
   const selectedId = useExplorer((s) => s.selectedId);
   const sheetTop = useExplorer((s) => s.mobileSheetTop);
@@ -117,8 +116,6 @@ export function GlobeScene({
   const earthCyOrigin = useRef(new THREE.Vector3());
   useFrame((_, dt) => {
     simClock.tick();
-    const [x, y, z] = sunDirectionScene(new Date(simClock.now()));
-    sun.current?.position.set(x * 10, y * 10, z * 10);
 
     // Test-only (never in production): where the Earth is rendered, throttled to 250 ms.
     if (process.env.NODE_ENV !== "production") {
@@ -136,12 +133,11 @@ export function GlobeScene({
 
   return (
     <>
-      <ambientLight intensity={0.35} />
-      <directionalLight ref={sun} intensity={2.2} />
       <Earth />
       {leo && <Objects records={leo} group="LEO" onReady={onReadyLeo} active={active} onLabelSource={onLeoLabels} />}
       {high && <Objects records={high} group="HIGH" onReady={onReadyHigh} active={active} onLabelSource={onHighLabels} />}
       <OrbitControls ref={controls} enableDamping enablePan={false} minDistance={1.12} maxDistance={12} zoomSpeed={0.8} />
+      <Picker sources={labelSources} />
       {labelsRef && <LabelDriver sources={labelSources} container={labelsRef} sheetLayout={sheetLayout} />}
     </>
   );

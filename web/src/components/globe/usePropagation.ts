@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { simClock } from "@/lib/clock";
 import type { OrbitRecord } from "@/lib/snapshot";
 import type { WorkerIn, WorkerOut } from "@/workers/propagate.worker";
@@ -11,13 +11,17 @@ export type PropagationFrames = {
 
 const TICK_MS = 100;
 
+/** Asks the worker for an object's orbit path (see WorkerIn "path"); resolves null if the worker went away. */
+export type RequestPath = (index: number, centerMs: number, steps: number) => Promise<Float32Array | null>;
+
 /** Keeps the latest two position frames from the worker. Renderers interpolate between them
  * at simClock.now(). `active` (default true) pauses the tick interval — without tearing down
  * the worker or losing the last two frames — while the globe is offscreen or the tab is
  * backgrounded, so an invisible globe doesn't keep propagating orbits nobody is rendering. */
-export function usePropagation(records: OrbitRecord[] | null, active = true): PropagationFrames {
+export function usePropagation(records: OrbitRecord[] | null, active = true): { frames: PropagationFrames; requestPath: RequestPath } {
   const frames = useRef({ prev: null as Float32Array | null, next: null as Float32Array | null, prevTime: 0, nextTime: 0 });
   const requestRef = useRef<() => void>(() => {});
+  const pathRef = useRef<RequestPath>(async () => null);
 
   useEffect(() => {
     if (!records || records.length === 0) return;
@@ -31,10 +35,24 @@ export function usePropagation(records: OrbitRecord[] | null, active = true): Pr
       worker.postMessage(msg);
     };
     requestRef.current = request;
+    const pendingPaths = new Map<number, (p: Float32Array | null) => void>();
+    let pathId = 0;
+    pathRef.current = (index, centerMs, steps) =>
+      new Promise((resolve) => {
+        const pid = ++pathId;
+        pendingPaths.set(pid, resolve);
+        const msg: WorkerIn = { kind: "path", id: pid, index, centerMs, steps };
+        worker.postMessage(msg);
+      });
     worker.onmessage = (e: MessageEvent<WorkerOut>) => {
       const msg = e.data;
       if (msg.kind === "loaded") {
         request();
+        return;
+      }
+      if (msg.kind === "path") {
+        pendingPaths.get(msg.id)?.(msg.positions);
+        pendingPaths.delete(msg.id);
         return;
       }
       const f = frames.current;
@@ -48,6 +66,8 @@ export function usePropagation(records: OrbitRecord[] | null, active = true): Pr
     worker.postMessage(load);
     return () => {
       requestRef.current = () => {};
+      pathRef.current = async () => null;
+      pendingPaths.forEach((resolve) => resolve(null));
       worker.terminate();
       frames.current = { prev: null, next: null, prevTime: 0, nextTime: 0 };
     };
@@ -61,5 +81,6 @@ export function usePropagation(records: OrbitRecord[] | null, active = true): Pr
     return () => window.clearInterval(timer);
   }, [active, records]);
 
-  return frames;
+  const requestPath = useCallback<RequestPath>((index, centerMs, steps) => pathRef.current(index, centerMs, steps), []);
+  return { frames, requestPath };
 }

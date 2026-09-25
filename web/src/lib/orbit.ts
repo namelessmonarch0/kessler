@@ -37,6 +37,23 @@ export function ecefToScene(x: number, y: number, z: number, out: Float32Array, 
   out[offset + 2] = -y / EARTH_RADIUS_KM;
 }
 
+/** Scene positions over one orbital period (from the mean motion) centred on `centerMs`, `steps` samples, in the
+ * same Earth-fixed frame as propagateAll. Empty if the object cannot be propagated. */
+export function orbitPath(rec: SatRec | null, centerMs: number, steps: number): Float32Array {
+  if (!rec || !(rec.no > 0) || steps < 2) return new Float32Array(0);
+  const periodMs = ((2 * Math.PI) / rec.no) * 60_000; // satrec.no is rad/min
+  const out = new Float32Array(steps * 3);
+  for (let i = 0; i < steps; i++) {
+    const date = new Date(centerMs + (i / (steps - 1) - 0.5) * periodMs);
+    const pv = propagate(rec, date);
+    const pos = pv ? pv.position : null;
+    if (!pos || !Number.isFinite(pos.x)) return new Float32Array(0);
+    const ecf = eciToEcf(pos, gstime(date));
+    ecefToScene(ecf.x, ecf.y, ecf.z, out, i * 3);
+  }
+  return out;
+}
+
 export function propagateAll(satrecs: (SatRec | null)[], date: Date, out: Float32Array): number {
   const gmst = gstime(date);
   let ok = 0;

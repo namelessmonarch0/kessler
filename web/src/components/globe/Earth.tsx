@@ -60,20 +60,7 @@ export function Earth() {
 
   return (
     <group>
-      {/* R3F only raycasts objects that have at least one pointer handler; without one here the
-          Earth is invisible to picking, so a click on the near side of the globe falls straight
-          through to whatever instanced object happens to sit behind it on the far side. Adding
-          handlers makes the Earth participate (as the nearest hit for any click on its visible
-          surface) and stopPropagation keeps that hit from also reaching objects further away. */}
-      <mesh
-        material={material}
-        onClick={(e) => e.stopPropagation()}
-        onPointerOver={(e) => {
-          e.stopPropagation();
-          document.body.style.cursor = "";
-        }}
-        onPointerOut={(e) => e.stopPropagation()}
-      >
+      <mesh material={material}>
         <sphereGeometry args={[EARTH_RADIUS, ...EARTH_SEGMENTS]} />
       </mesh>
       {/* ink outline (inverted hull) */}
