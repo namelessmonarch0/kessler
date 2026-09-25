@@ -138,7 +138,9 @@ aws lambda invoke --function-name kessler-jobs --cli-binary-format raw-in-base64
 cat ingest-out.json
 ```
 
-Then check that `ingest_runs` recorded both jobs via the API (see step 7 for the Function URL):
+Then check that `ingest_runs` recorded both jobs via the API (see step 7 for the Function URL). If
+`infra/cdk.json`'s `api_url_auth` is `AWS_IAM`, sign this request as shown in "Origin protection"
+below; while it's `NONE`, the origin secret alone is enough:
 
 ```bash
 curl -s -H "x-origin-auth: $(aws ssm get-parameter --name /kessler/ORIGIN_SECRET \
@@ -147,16 +149,25 @@ curl -s -H "x-origin-auth: $(aws ssm get-parameter --name /kessler/ORIGIN_SECRET
 
 ## 7. Verify the Function URL
 
+`/api/health` is a liveness check only (no database); `/api/ready` additionally checks the
+database. Neither needs the origin secret — but that's an application-level check; AWS itself
+rejects *every* unsigned path, `/api/health` included, once `api_url_auth` is `AWS_IAM` (below),
+before the request ever reaches the app.
+
 ```bash
 URL=$(aws cloudformation describe-stacks --stack-name KesslerApp \
   --query "Stacks[0].Outputs[?OutputKey=='ApiFunctionUrl'].OutputValue" --output text)
 
 curl -s -o /dev/null -w '%{http_code}\n' "${URL}api/health"                            # 200
+curl -s "${URL}api/ready"                                                              # {"status":"ok","gp_age_hours":...}
 curl -s -o /dev/null -w '%{http_code}\n' "${URL}api/meta"                              # 403
 curl -s -o /dev/null -w '%{http_code}\n' -H "x-origin-auth: $(aws ssm get-parameter \
   --name /kessler/ORIGIN_SECRET --with-decryption --query Parameter.Value --output text)" \
   "${URL}api/meta"                                                                     # 200
 ```
+
+If `api_url_auth` is `AWS_IAM`, every one of the calls above needs SigV4 signing or AWS rejects it
+before it reaches the app — see "Origin protection" below for the exact `curl --aws-sigv4` form.
 
 `$URL` already ends with a trailing slash — the paths above have no leading slash.
 
@@ -305,3 +316,100 @@ aws lambda invoke --function-name kessler-jobs --cli-binary-format raw-in-base64
 **6-month AWS free-plan reminder:** before the AWS free plan ends, upgrade the account to a
 paid plan (expected cost about $0–2/month with this workload) or it will be closed and the
 site will go down.
+
+## 12. Origin protection
+
+The API's Lambda Function URL is IAM-authenticated (`api_url_auth` in `infra/cdk.json`): only the
+Vercel proxy, via OIDC-federated short-lived credentials for the `kessler-vercel-api` role, and
+the deploy workflow's smoke test, via `kessler-github-deploy`, may call it once it's enforced.
+Full design: `docs/superpowers/specs/2026-09-25-origin-protection-design.md`.
+
+### One-time setup
+
+- Vercel → Project `kessler` → **Settings → Security** → "Secure backend access with OIDC
+  federation" = **Team**.
+- After `KesslerApp` deploys with the origin-protection infra, set the role ARN for
+  **Production** only (previews may not call the API):
+
+  ```bash
+  aws cloudformation describe-stacks --stack-name KesslerApp \
+    --query "Stacks[0].Outputs[?OutputKey=='VercelApiRoleArn'].OutputValue" --output text
+  cd web
+  npx vercel env add AWS_ROLE_ARN production   # paste the ARN above when prompted
+  cd ..
+  ```
+
+  `API_ORIGIN_REGION` is not needed — the proxy defaults to `us-east-2`.
+- Redeploy the site so the new environment variable takes effect (`vercel redeploy <production
+  URL> --prod`, or an empty push to `main`).
+
+### Rollout (three pushes)
+
+1. **This code, with `api_url_auth = NONE`.** Push to `main`; the deploy workflow's smoke test
+   signs `/api/health` and `/api/ready` with the deploy role's credentials (both expect 200) and
+   still checks that the origin secret guards `/api/meta` (403 unsigned). Verify live: with
+   `AWS_ROLE_ARN` set (previous step), the site keeps loading data — a broken OIDC → STS exchange
+   or signing bug shows up as `502`s from `/api/*`, not silently. AWS doesn't validate signatures
+   yet (the URL is still `NONE`), so a bad signature only surfaces at step 2.
+   **Rollback:** unset `AWS_ROLE_ARN` in Vercel.
+2. **Flip `api_url_auth` to `AWS_IAM`** in `infra/cdk.json`, commit, push. Verify immediately
+   after the deploy: an unsigned request to the function URL now returns 403 from AWS — (`$URL`
+   as fetched in step 7, ending in a trailing slash)
+
+   ```bash
+   curl -s -o /dev/null -w '%{http_code}\n' "${URL}api/health"   # 403
+   ```
+
+   — the site still loads data (a signing mismatch would show as 403s through the proxy), and the
+   smoke test's signed and unsigned checks both pass.
+   **Rollback:** set `api_url_auth` back to `NONE` and push (site data is unavailable for the few
+   minutes that deploy takes, at worst).
+3. **Retire the origin secret; add the rate-limit rule.** Verify the site, the smoke test, and
+   that the rule shows up in `vercel firewall rules list`.
+   **Rollback:** remove the WAF rule (below); the secret removal itself needs no rollback once
+   IAM is enforced — IAM is the protection.
+
+### Rate-limit rule (Vercel WAF)
+
+One rule on `/api/*`: fixed 60 s window, 300 requests per IP, action 429. Confirmed CLI syntax
+(`cd web` first; add `--scope kudayyurter` if the CLI session isn't already scoped to the team):
+
+```bash
+cd web
+npx vercel firewall rules add "api rate limit" \
+  --condition '{"type":"path","op":"pre","value":"/api/"}' \
+  --action rate_limit \
+  --rate-limit-window 60 \
+  --rate-limit-requests 300 \
+  --rate-limit-keys ip \
+  --yes
+npx vercel firewall publish --yes
+cd ..
+```
+
+`firewall rules add` only stages a draft change — `firewall publish` is a separate, required step
+that makes it live.
+
+List and remove:
+
+```bash
+cd web
+npx vercel firewall rules list
+npx vercel firewall rules remove "api rate limit" --yes
+npx vercel firewall publish --yes
+cd ..
+```
+
+### Signed direct calls
+
+Once `api_url_auth` is `AWS_IAM`, AWS rejects every unsigned request to the function URL,
+including `/api/health`. Sign with SigV4 using credentials from any principal the trust policy or
+the function's resource policy allows (the deploy role, or the Vercel role's own temporary
+credentials); `$URL` is the Function URL, as fetched in step 7:
+
+```bash
+curl --aws-sigv4 "aws:amz:us-east-2:lambda" \
+  --user "$AWS_ACCESS_KEY_ID:$AWS_SECRET_ACCESS_KEY" \
+  -H "x-amz-security-token: $AWS_SESSION_TOKEN" \
+  "${URL}api/health"
+```

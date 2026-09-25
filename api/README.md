@@ -67,4 +67,14 @@ Always build with `--platform linux/amd64 --provenance=false`, because Lambda re
 
 In Lambda, `SSM_PREFIX=/kessler/` loads secrets from SSM Parameter Store at cold start, and `SNAPSHOT_BUCKET` switches globe snapshots to S3.
 
+## Health checks
+
+`GET /api/health` is liveness only — the process answers, no database access — so it's cheap for
+anyone to call. `GET /api/ready` is readiness — it runs `SELECT 1` and returns
+`gp_age_hours`, and answers 503 when the database is unavailable. Both are open paths: they never
+require the origin secret. The Vercel proxy (`web/src/lib/proxy.ts`) refuses to forward
+`/api/ready`, since it's meant for direct, signed calls only (the deploy workflow's smoke test).
+See `docs/deploy.md` → "Origin protection" for the IAM signing that guards the Function URL in
+production.
+
 Data: USSPACECOM via Space-Track.org; CelesTrak.

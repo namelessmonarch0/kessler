@@ -181,3 +181,16 @@ The Vercel project `kessler` builds this folder: **Root Directory** `web`, frame
 - `ORIGIN_SECRET`: the same value as SSM `/kessler/ORIGIN_SECRET`.
 
 `vercel.json` pins functions to `cle1` (next to AWS us-east-2) and skips builds when nothing under `web/` changed since the last deployment.
+
+### Signed requests to the origin (production)
+
+When `AWS_ROLE_ARN` is set, `src/lib/proxy.ts` signs every upstream request with SigV4 (service
+`lambda`), using short-lived credentials obtained by exchanging Vercel's own OIDC token for that
+role (`@vercel/oidc-aws-credentials-provider`, no stored AWS keys). Set it for **Production**
+only — the role's trust policy only accepts this project's production environment, so previews
+can't assume it. `API_ORIGIN_REGION` defaults to `us-east-2` and normally doesn't need setting
+(deliberately distinct from `AWS_REGION`, which Vercel's runtime sets to its own region).
+
+Local development and tests run with no `AWS_ROLE_ARN`, so requests to the API stay unsigned, as
+they always have. See `docs/deploy.md` → "Origin protection" for the one-time Vercel OIDC setup
+and rollout.
