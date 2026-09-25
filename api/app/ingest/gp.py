@@ -12,7 +12,7 @@ from app.config import Settings
 from app.domain.orbits import parse_epoch
 from app.history.archive import archive_gp
 from app.ingest.runlog import GLOBE_LOCK, advisory_lock, last_success, run_log
-from app.ingest.snapshot import SnapshotStore, write_snapshots
+from app.ingest.snapshot import SnapshotStore, publish_generation
 from app.ingest.sources import SourceError
 
 log = logging.getLogger(__name__)
@@ -183,6 +183,6 @@ def run_ingest_gp(
             conn, records, source, replace=(source == "spacetrack"),
             minimum=settings.min_gp_rows_spacetrack if source == "spacetrack" else None,
         )
-        write_snapshots(conn, store, now)
+        publish_generation(conn, store, now, run.id)
     log.info("ingest_gp wrote %d element sets and archived %d new ones", run.rows, archived)
     return GpIngestResult(written=run.rows, archived=archived)

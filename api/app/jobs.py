@@ -9,11 +9,11 @@ from app.config import Settings, load_settings, make_store
 from app.db import connect
 from app.ingest.gp import run_ingest_gp
 from app.ingest.satcat import run_ingest_satcat
-from app.ingest.snapshot import SnapshotStore
+from app.ingest.snapshot import SnapshotStore, run_publish_globe
 from app.ingest.sources import USER_AGENT, CelesTrakClient, SpaceTrackClient
 from app.stats.rebuild import run_rebuild_stats
 
-JOBS = ("ingest-satcat", "ingest-gp", "rebuild-stats", "all")
+JOBS = ("ingest-satcat", "ingest-gp", "rebuild-stats", "publish-globe", "all")
 
 
 def run_job(
@@ -50,6 +50,8 @@ def run_job(
                                store=store, settings=settings)
             result["ingest_gp"] = gp.written
             result["archived_gp"] = gp.archived
+        if name == "publish-globe":
+            result["publish_globe"] = run_publish_globe(conn, store)
         return result
 
 

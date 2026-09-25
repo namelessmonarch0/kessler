@@ -13,7 +13,8 @@ from app.ingest.gp import GpIngestResult, parse_gp_csv, parse_gp_records, run_in
 from app.ingest.satcat import run_ingest_satcat
 from app.ingest.snapshot import (
     LocalSnapshotStore,
-    snapshot_key,
+    generation_key,
+    read_pointer,
     unpack_snapshot,
 )
 from app.ingest.sources import SourceError
@@ -80,12 +81,17 @@ def test_spacetrack_ingest_replaces_and_skips_unknown_objects(catalog, store):
     assert rows[25544]["source"] == "spacetrack"
 
 
-def test_snapshots_are_written_per_group(catalog, store):
+def test_snapshots_are_published_as_one_generation(catalog, store):
     run_ingest_gp(
         catalog, spacetrack=FakeSpaceTrack(ST_SAMPLE), celestrak=FakeCelesTrakGp(SAMPLE),
         store=store, settings=SETTINGS, now=NOW,
     )
-    header, records = unpack_snapshot(store.get(snapshot_key("LEO")))
+    pointer = read_pointer(store)
+    run_id = catalog.execute("SELECT id FROM ingest_runs WHERE job = 'ingest_gp'").fetchone()["id"]
+    assert pointer["generation"] == f"20260923T120000Z-r{run_id}"
+    assert pointer["groups"] == {"LEO": {"count": 2}, "HIGH": {"count": 1}}
+    gen = pointer["generation"]
+    header, records = unpack_snapshot(store.get(generation_key(gen, "LEO.bin.gz")))
     assert header["version"] == 1 and header["count"] == 2
     by_id = {r[0]: r for r in records}
     assert set(by_id) == {25544, 29733}
@@ -93,7 +99,7 @@ def test_snapshots_are_written_per_group(catalog, store):
     assert header["owners"][iss[1]] == "ISS"
     assert header["types"][iss[2]] == "PAY"
     assert iss[4] == pytest.approx(15.49224498)
-    high_header, high_records = unpack_snapshot(store.get(snapshot_key("HIGH")))
+    _, high_records = unpack_snapshot(store.get(generation_key(gen, "HIGH.bin.gz")))
     assert [r[0] for r in high_records] == [24876]
 
 
@@ -401,3 +407,28 @@ def test_overlapping_runs_wait_for_each_other(catalog, store, migrated):
         assert last_run(catalog)["status"] == "failed"
         assert gp_rows(catalog) == {}  # it waited instead of writing alongside the other run
     assert run_ingest_gp(catalog, **kw).written == 3  # the other session ended: the lock is free
+
+
+class FailingHighStore(LocalSnapshotStore):
+    def put(self, key: str, data: bytes) -> None:
+        if key.endswith("/HIGH.bin.gz"):
+            raise OSError("S3 unavailable")
+        super().put(key, data)
+
+
+def test_failed_publication_keeps_the_previous_generation_and_fails_the_run(
+    catalog, store, tmp_path
+):
+    run_ingest_gp(
+        catalog, spacetrack=FakeSpaceTrack(ST_SAMPLE), celestrak=FakeCelesTrakGp(SAMPLE),
+        store=store, settings=SETTINGS, now=NOW,
+    )
+    first = read_pointer(store)["generation"]
+    with pytest.raises(OSError, match="S3 unavailable"):
+        run_ingest_gp(
+            catalog, spacetrack=FakeSpaceTrack(NEWER_ISS), celestrak=FakeCelesTrakGp(SAMPLE),
+            store=FailingHighStore(tmp_path), settings=SETTINGS, now=NOW + timedelta(hours=6),
+        )
+    assert read_pointer(store)["generation"] == first
+    assert store.get(generation_key(first, "HIGH.bin.gz")) is not None
+    assert last_run(catalog)["status"] == "failed"

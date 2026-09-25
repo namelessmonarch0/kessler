@@ -58,6 +58,12 @@ jobs:
             --cli-read-timeout 900 --payload '{"job":"migrate"}' out.json > meta.json
           cat out.json
           if grep -q FunctionError meta.json; then echo "migration failed"; exit 1; fi
+      - name: Publish the globe from the database
+        run: |
+          aws lambda invoke --function-name kessler-jobs --cli-binary-format raw-in-base64-out \
+            --cli-read-timeout 900 --payload '{"job":"publish-globe"}' out.json > meta.json
+          cat out.json
+          if grep -q FunctionError meta.json; then echo "globe publish failed"; exit 1; fi
       - name: Smoke test
         run: |
           URL=$(aws cloudformation describe-stacks --stack-name KesslerApp \

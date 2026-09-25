@@ -10,6 +10,7 @@ from typing import Protocol
 import psycopg
 
 from app.domain.orbits import OBJECT_TYPES
+from app.ingest.runlog import GLOBE_LOCK, advisory_lock, run_log
 
 log = logging.getLogger(__name__)
 
@@ -128,27 +129,6 @@ def unpack_snapshot(data: bytes) -> tuple[dict, list[tuple]]:
     return header, records
 
 
-def write_snapshots(
-    conn: psycopg.Connection, store: SnapshotStore, generated_at: datetime
-) -> dict[str, int]:
-    counts: dict[str, int] = {}
-    for group, regimes in SNAPSHOT_GROUPS.items():
-        rows = conn.execute(
-            """
-            SELECT o.norad_id, o.owner, o.object_type, g.epoch, g.mean_motion, g.eccentricity,
-                   g.inclination, g.raan, g.arg_pericenter, g.mean_anomaly, g.bstar,
-                   g.mean_motion_dot, g.mean_motion_ddot
-            FROM gp_elements g JOIN objects o USING (norad_id)
-            WHERE o.decay_date IS NULL AND o.regime = ANY(%s)
-            ORDER BY o.norad_id
-            """,
-            (list(regimes),),
-        ).fetchall()
-        store.put(snapshot_key(group), pack_snapshot(rows, generated_at))
-        counts[group] = len(rows)
-    return counts
-
-
 GROUP_ROWS_SQL = """
     SELECT o.norad_id, o.name, o.owner, o.object_type, g.epoch, g.mean_motion, g.eccentricity,
            g.inclination, g.raan, g.arg_pericenter, g.mean_anomaly, g.bstar,
@@ -214,3 +194,15 @@ def remove_old_generations(store: SnapshotStore, current: str, previous: str | N
             store.delete(key)
     for group in SNAPSHOT_GROUPS:
         store.delete(snapshot_key(group))
+
+
+def run_publish_globe(
+    conn: psycopg.Connection, store: SnapshotStore, now: datetime | None = None
+) -> int:
+    """Republishes the globe from the database without fetching anything (after a deploy, or to
+    repair a failed publication). Takes the same lock as GP ingests."""
+    now = now or datetime.now(UTC)
+    with run_log(conn, "publish_globe") as run, advisory_lock(conn, GLOBE_LOCK):
+        run.source = "database"
+        run.rows = sum(publish_generation(conn, store, now, run.id).values())
+    return run.rows
