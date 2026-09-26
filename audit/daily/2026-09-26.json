@@ -1,0 +1,165 @@
+{
+  "date": "2026-09-26",
+  "commit": "4638615b6fb6fb1135317f946c720d22c8a28cd1",
+  "generatedAt": "2026-09-26T06:41:32.254296+00:00",
+  "timeMs": 1790422457000,
+  "snapshotAgeHours": 4.879096111111111,
+  "sampled": 500,
+  "failed": 0,
+  "failures": {
+    "site": 0,
+    "reference": 0,
+    "both": 0
+  },
+  "byType": {
+    "PAY": {
+      "n": 294,
+      "maxKm": 0.04954896939739071,
+      "p95Km": 0.046414604487498415
+    },
+    "DEB": {
+      "n": 161,
+      "maxKm": 0.04776569876810995,
+      "p95Km": 0.04454270010429703
+    },
+    "R/B": {
+      "n": 35,
+      "maxKm": 0.04857359006816445,
+      "p95Km": 0.04502779014469799
+    },
+    "UNK": {
+      "n": 10,
+      "maxKm": 0.044933691824456196,
+      "p95Km": 0.044933691824456196
+    }
+  },
+  "byRegime": {
+    "LEO": {
+      "n": 435,
+      "maxKm": 0.04954896939739071,
+      "p95Km": 0.04616452738692904
+    },
+    "HIGH": {
+      "n": 65,
+      "maxKm": 0.04776569876810995,
+      "p95Km": 0.04474352660224971
+    }
+  },
+  "age": {
+    "p50Days": 0.8949582637052182,
+    "p95Days": 4.341743133703162,
+    "staleShare": 0.08
+  },
+  "iss": {
+    "groundKm": 0.003125884632742213,
+    "altDiffKm": 0.0018597601118131024,
+    "theirs": {
+      "latDeg": 50.445850911816,
+      "lonDeg": 87.495158348589,
+      "altKm": 424.07007127248,
+      "timestamp": 1790422457
+    }
+  },
+  "worst": [
+    {
+      "noradId": 44857,
+      "name": "RISAT-2BR1",
+      "type": "PAY",
+      "regime": "LEO",
+      "ageDays": 0.49977377370198567,
+      "groundKm": 0.04954896939739071,
+      "altDiffKm": 0.00009975690716146346,
+      "ok": true
+    },
+    {
+      "noradId": 54198,
+      "name": "STARLINK-5246",
+      "type": "PAY",
+      "regime": "LEO",
+      "ageDays": 1.0408973037041558,
+      "groundKm": 0.048593144183828096,
+      "altDiffKm": -0.00010823903528489609,
+      "ok": true
+    },
+    {
+      "noradId": 8352,
+      "name": "N-1 R/B",
+      "type": "R/B",
+      "regime": "LEO",
+      "ageDays": 0.5940966437050148,
+      "groundKm": 0.04857359006816445,
+      "altDiffKm": -0.0000070777131213617395,
+      "ok": true
+    },
+    {
+      "noradId": 68349,
+      "name": "STARLINK-37183",
+      "type": "PAY",
+      "regime": "LEO",
+      "ageDays": 1.5288062737019856,
+      "groundKm": 0.047948591953028946,
+      "altDiffKm": 4.496018846111838e-7,
+      "ok": true
+    },
+    {
+      "noradId": 40187,
+      "name": "CZ-3B DEB",
+      "type": "DEB",
+      "regime": "HIGH",
+      "ageDays": 2.116566643705015,
+      "groundKm": 0.04776569876810995,
+      "altDiffKm": -0.002230123034451026,
+      "ok": true
+    },
+    {
+      "noradId": 22490,
+      "name": "SCD 1",
+      "type": "PAY",
+      "regime": "LEO",
+      "ageDays": 1.0539695837035004,
+      "groundKm": 0.0476538897242951,
+      "altDiffKm": -0.00013059581817742583,
+      "ok": true
+    },
+    {
+      "noradId": 49027,
+      "name": "TIANQI-15",
+      "type": "PAY",
+      "regime": "LEO",
+      "ageDays": 0.6650750837029351,
+      "groundKm": 0.047484468208393846,
+      "altDiffKm": -0.00019349824970049667,
+      "ok": true
+    },
+    {
+      "noradId": 63409,
+      "name": "STARLINK-33693",
+      "type": "PAY",
+      "regime": "LEO",
+      "ageDays": 0.7482572937039976,
+      "groundKm": 0.047360577785569916,
+      "altDiffKm": -0.00008319111998389417,
+      "ok": true
+    },
+    {
+      "noradId": 59690,
+      "name": "STARLINK-32106",
+      "type": "PAY",
+      "regime": "LEO",
+      "ageDays": 0.886398983702483,
+      "groundKm": 0.04731842728049965,
+      "altDiffKm": 0.00008142404647060175,
+      "ok": true
+    },
+    {
+      "noradId": 54021,
+      "name": "CENTISPACE-1 S6",
+      "type": "PAY",
+      "regime": "LEO",
+      "ageDays": 0.5827512637018274,
+      "groundKm": 0.047185413481874994,
+      "altDiffKm": -0.0002816772059759387,
+      "ok": true
+    }
+  ]
+}
