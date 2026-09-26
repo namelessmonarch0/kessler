@@ -32,7 +32,7 @@ def _no_dotenv(monkeypatch: pytest.MonkeyPatch) -> None:
     fresh on every `Settings()` call (it is not baked into the schema at class-definition
     time), so mutating it here — and letting monkeypatch restore it after the test — reliably
     disables dotenv loading without touching real env vars. Verified manually: instantiating
-    `Settings()` in a directory containing a `.env` with `ORIGIN_SECRET=leaked` returns
+    `Settings()` in a directory containing a `.env` with `SPACETRACK_USER=leaked` returns
     `"leaked"` normally, and `None` once `env_file` is patched to `None`.
     """
     monkeypatch.setitem(Settings.model_config, "env_file", None)

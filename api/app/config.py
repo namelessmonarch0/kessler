@@ -12,7 +12,6 @@ class Settings(BaseSettings):
     database_url: str = "postgresql://kessler:kessler@localhost:5432/kessler"
     spacetrack_user: str | None = None
     spacetrack_pass: str | None = None
-    origin_secret: str | None = None
     snapshot_dir: str = "./.snapshots"
     snapshot_bucket: str | None = None
     ssm_prefix: str | None = None
@@ -22,7 +21,7 @@ class Settings(BaseSettings):
     min_gp_rows_celestrak: int = 5_000
 
     @field_validator(
-        "spacetrack_user", "spacetrack_pass", "origin_secret",
+        "spacetrack_user", "spacetrack_pass",
         "snapshot_bucket", "ssm_prefix", mode="before",
     )
     @classmethod
@@ -35,9 +34,9 @@ class Settings(BaseSettings):
         return value
 
 
-# Parameters production cannot run without. A missing ORIGIN_SECRET would turn the public
-# Function URL into an unauthenticated back door (spec §4), so it is fatal too.
-PRODUCTION_PARAMETERS = ("DATABASE_URL", "ORIGIN_SECRET")
+# Parameters production cannot run without. IAM auth on the Function URL is what keeps it from
+# being a public back door now (spec §4); this list no longer needs a shared secret for that.
+PRODUCTION_PARAMETERS = ("DATABASE_URL",)
 
 
 def load_settings() -> Settings:

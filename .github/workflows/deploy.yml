@@ -68,7 +68,6 @@ jobs:
         run: |
           URL=$(aws cloudformation describe-stacks --stack-name KesslerApp \
             --query "Stacks[0].Outputs[?OutputKey=='ApiFunctionUrl'].OutputValue" --output text)
-          AUTH=$(jq -r '.context.api_url_auth // "NONE"' infra/cdk.json)
           SIGN=(--aws-sigv4 "aws:amz:us-east-2:lambda"
                 --user "$AWS_ACCESS_KEY_ID:$AWS_SECRET_ACCESS_KEY"
                 -H "x-amz-security-token: $AWS_SESSION_TOKEN")
@@ -86,8 +85,4 @@ jobs:
           }
           check 200 "${SIGN[@]}" "${URL}api/health"
           check 200 "${SIGN[@]}" "${URL}api/ready"
-          if [ "$AUTH" = "AWS_IAM" ]; then
-            check 403 "${URL}api/health"     # AWS rejects unsigned requests
-          else
-            check 403 "${URL}api/meta"       # the origin secret still guards the app
-          fi
+          check 403 "${URL}api/health"       # IAM auth rejects unsigned requests

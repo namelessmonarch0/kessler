@@ -19,9 +19,9 @@ def test_settings_treats_blank_env_var_as_none(monkeypatch):
 
 
 def test_settings_ignores_dotenv_file_in_tests(tmp_path, monkeypatch):
-    (tmp_path / ".env").write_text("ORIGIN_SECRET=x\n")
+    (tmp_path / ".env").write_text("SPACETRACK_USER=x\n")
     monkeypatch.chdir(tmp_path)
-    assert Settings().origin_secret is None
+    assert Settings().spacetrack_user is None
 
 
 def test_connect_returns_dict_rows_in_autocommit(database_url):

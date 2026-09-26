@@ -68,14 +68,7 @@ first and delete the file afterward.
  aws ssm put-parameter --type SecureString --name /kessler/DATABASE_URL --value '<neon pooled connection string>'
  aws ssm put-parameter --type SecureString --name /kessler/SPACETRACK_USER --value '<space-track username>'
  aws ssm put-parameter --type SecureString --name /kessler/SPACETRACK_PASS --value '<space-track password>'
- ORIGIN_SECRET="$(openssl rand -hex 32)"
- echo "$ORIGIN_SECRET"   # shown here only, in this terminal — not stored anywhere else
- aws ssm put-parameter --type SecureString --name /kessler/ORIGIN_SECRET --value "$ORIGIN_SECRET"
 ```
-
-Copy the printed `ORIGIN_SECRET` value now — it is needed in step 9 (Vercel), where it must be
-typed into the Vercel UI directly (there's no CLI to hand it to). Steps 6 and 7 read it back
-from SSM automatically, so you don't need to keep it around for those.
 
 ## 4. Registry and CI stacks
 
@@ -138,36 +131,35 @@ aws lambda invoke --function-name kessler-jobs --cli-binary-format raw-in-base64
 cat ingest-out.json
 ```
 
-Then check that `ingest_runs` recorded both jobs via the API (see step 7 for the Function URL). If
-`infra/cdk.json`'s `api_url_auth` is `AWS_IAM`, sign this request as shown in "Origin protection"
-below; while it's `NONE`, the origin secret alone is enough:
+Then check that `ingest_runs` recorded both jobs via the API (see step 7 for the Function URL).
+The Function URL requires SigV4 signing (`api_url_auth = AWS_IAM` in `infra/cdk.json`) — see
+"Signed direct calls" under "Origin protection" below for the exact form:
 
 ```bash
-curl -s -H "x-origin-auth: $(aws ssm get-parameter --name /kessler/ORIGIN_SECRET \
-  --with-decryption --query Parameter.Value --output text)" "<function url>api/meta" | head -c 2000
+curl --aws-sigv4 "aws:amz:us-east-2:lambda" \
+  --user "$AWS_ACCESS_KEY_ID:$AWS_SECRET_ACCESS_KEY" \
+  -H "x-amz-security-token: $AWS_SESSION_TOKEN" \
+  "<function url>api/meta" | head -c 2000
 ```
 
 ## 7. Verify the Function URL
 
 `/api/health` is a liveness check only (no database); `/api/ready` additionally checks the
-database. Neither needs the origin secret — but that's an application-level check; AWS itself
-rejects *every* unsigned path, `/api/health` included, once `api_url_auth` is `AWS_IAM` (below),
-before the request ever reaches the app.
+database. AWS rejects every unsigned path, `/api/health` included, before the request ever
+reaches the app — the Function URL requires SigV4 signing (`api_url_auth = AWS_IAM` in
+`infra/cdk.json`; see "Signed direct calls" under "Origin protection" below for the exact
+`curl --aws-sigv4` form used here).
 
 ```bash
 URL=$(aws cloudformation describe-stacks --stack-name KesslerApp \
   --query "Stacks[0].Outputs[?OutputKey=='ApiFunctionUrl'].OutputValue" --output text)
+SIGN=(--aws-sigv4 "aws:amz:us-east-2:lambda" --user "$AWS_ACCESS_KEY_ID:$AWS_SECRET_ACCESS_KEY" \
+  -H "x-amz-security-token: $AWS_SESSION_TOKEN")
 
-curl -s -o /dev/null -w '%{http_code}\n' "${URL}api/health"                            # 200
-curl -s "${URL}api/ready"                                                              # {"status":"ok","gp_age_hours":...}
-curl -s -o /dev/null -w '%{http_code}\n' "${URL}api/meta"                              # 403
-curl -s -o /dev/null -w '%{http_code}\n' -H "x-origin-auth: $(aws ssm get-parameter \
-  --name /kessler/ORIGIN_SECRET --with-decryption --query Parameter.Value --output text)" \
-  "${URL}api/meta"                                                                     # 200
+curl -s -o /dev/null -w '%{http_code}\n' "${SIGN[@]}" "${URL}api/health"               # 200
+curl -s "${SIGN[@]}" "${URL}api/ready"                                                 # {"status":"ok","gp_age_hours":...}
+curl -s -o /dev/null -w '%{http_code}\n' "${URL}api/health"                            # 403 (unsigned)
 ```
-
-If `api_url_auth` is `AWS_IAM`, every one of the calls above needs SigV4 signing or AWS rejects it
-before it reaches the app — see "Origin protection" below for the exact `curl --aws-sigv4` form.
 
 `$URL` already ends with a trailing slash — the paths above have no leading slash.
 
@@ -218,9 +210,8 @@ workflow**.
 ## 9. Vercel
 
 - New project, imported from `namelessmonarch0/kessler`, **Root Directory** `web`.
-- Project environment variables (Production and Preview) — **owner types this personally**:
+- Project environment variable (Production and Preview) — **owner types this personally**:
   - `API_ORIGIN_URL` = the Function URL from step 7, **without** the trailing slash.
-  - `ORIGIN_SECRET` = the value generated in step 3.
 - Deploy. If the deployment shows **"Canceled by Ignored Build Step"**, that's `ignoreCommand`
   in `web/vercel.json` deciding this build has no relevant changes — click **Redeploy** to force
   it anyway (`ignoreCommand` always builds a redeploy of the commit that is already live).
@@ -230,6 +221,9 @@ workflow**.
   ```
   CNAME  kessler  cname.vercel-dns.com
   ```
+- Set `AWS_ROLE_ARN` for **Production** so the proxy can sign requests to the IAM-protected
+  Function URL — see "Origin protection" → "One-time setup" below. Do this before step 10:
+  without it, the live site's `/api/*` calls fail.
 
 ## 10. Verify the site
 
@@ -249,23 +243,6 @@ Visit `https://kessler.kudayyurter.dev` and confirm:
   `cache-control: public, max-age=31536000, immutable`.
 
 ## 11. Operations
-
-**Rotate `ORIGIN_SECRET`:**
-
-```bash
-NEW_SECRET="$(openssl rand -hex 32)"
-echo "$NEW_SECRET"   # shown here only, in this terminal — not stored anywhere else
-aws ssm put-parameter --type SecureString --name /kessler/ORIGIN_SECRET --value "$NEW_SECRET" --overwrite
-```
-
-Update `ORIGIN_SECRET` in the Vercel project (Production + Preview) to the printed value and
-redeploy the web app. Then force `kessler-api` to drop its warm containers, so every invocation
-re-reads SSM:
-
-```bash
-aws lambda update-function-configuration --function-name kessler-api \
-  --description "rotated $(date -u +%F)"
-```
 
 **Rerun a job manually** (e.g. after a failed scheduled ingest):
 
@@ -358,7 +335,7 @@ Full design: `docs/superpowers/specs/2026-09-25-origin-protection-design.md`.
   `main` does not work: `ignoreCommand` cancels every build whose commits change nothing under
   `web/`.
 
-### Rollout (three pushes)
+### Rollout (four pushes)
 
 1. **This code, with `api_url_auth = NONE`.** Push to `main`; the deploy workflow's smoke test
    signs `/api/health` and `/api/ready` with the deploy role's credentials (both expect 200) and
@@ -466,8 +443,29 @@ Full design: `docs/superpowers/specs/2026-09-25-origin-protection-design.md`.
    aws lambda remove-permission --function-name kessler-api --statement-id public-url
    aws lambda remove-permission --function-name kessler-api --statement-id public-invoke
    ```
-3. **Retire the origin secret; add the rate-limit rule.** Verify the site, the smoke test, and
-   that the rule shows up in `vercel firewall rules list`.
+3. **Push the commit that stops the API requiring the origin secret** (IAM auth alone protects
+   it now; the proxy keeps sending the header harmlessly until step 4). Wait for `deploy.yml` to
+   go green.
+
+   With the owner's go-ahead, remove `ORIGIN_SECRET` from the Vercel project (Production) and
+   redeploy (see "One-time setup" above for the `vercel redeploy` form) — or skip the manual
+   redeploy, since step 4's push rebuilds the proxy without it either way:
+
+   ```bash
+   cd web
+   npx vercel env rm ORIGIN_SECRET production --yes --scope kudayyurter
+   cd ..
+   ```
+4. **Push the commit that stops the proxy sending the secret.** Then, with the owner's admin
+   login, no secret value shown:
+
+   ```bash
+   aws ssm delete-parameter --name /kessler/ORIGIN_SECRET
+   ```
+
+   Add the WAF rate-limit rule (below). Verify the site, the smoke test, and that the rule shows
+   up in `vercel firewall rules list`.
+
    **Rollback:** remove the WAF rule (below); the secret removal itself needs no rollback once
    IAM is enforced — IAM is the protection.
 

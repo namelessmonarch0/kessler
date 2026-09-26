@@ -111,13 +111,10 @@ def test_events_and_meta(client):
     assert meta["attribution"].startswith("Data: USSPACECOM")
 
 
-def test_origin_secret_required_except_health(world, migrated, store):
-    c, db = make_client(migrated, store, origin_secret="s3cret")
+def test_no_request_needs_an_origin_secret(world, migrated, store, monkeypatch):
+    monkeypatch.setenv("ORIGIN_SECRET", "s3cret")  # a leftover value must change nothing
+    c, db = make_client(migrated, store)
     with c:
-        assert c.get("/api/meta").status_code == 403
-        assert c.get("/api/meta").json()["error"]["code"] == "forbidden"
-        assert c.get("/api/meta", headers={"X-Origin-Auth": "wrong"}).status_code == 403
-        assert c.get("/api/meta", headers={"X-Origin-Auth": "s3cret"}).status_code == 200
-        assert c.get("/api/health").status_code == 200
-        assert c.get("/api/ready").status_code == 200  # signed smoke test has no secret
+        assert c.get("/api/meta").status_code == 200
+        assert c.get("/api/meta", headers={"X-Origin-Auth": "wrong"}).status_code == 200
     db.close()

@@ -58,19 +58,24 @@ def test_load_ssm_env_pages_through_many_parameters(aws, monkeypatch):
 
 def test_load_settings_requires_production_parameters(aws, monkeypatch):
     monkeypatch.setenv("SSM_PREFIX", "/kessler/")
-    clear_env(monkeypatch, "DATABASE_URL", "ORIGIN_SECRET")
-    put_params({"DATABASE_URL": "postgresql://neon/db"})  # ORIGIN_SECRET forgotten
-    with pytest.raises(RuntimeError, match="/kessler/ORIGIN_SECRET"):
+    clear_env(monkeypatch, "DATABASE_URL")
+    with pytest.raises(RuntimeError, match="/kessler/DATABASE_URL"):
         load_settings()
+
+
+def test_production_settings_no_longer_need_an_origin_secret(aws, monkeypatch):
+    monkeypatch.setenv("SSM_PREFIX", "/kessler/")
+    clear_env(monkeypatch, "DATABASE_URL")
+    put_params({"DATABASE_URL": "postgresql://neon/db"})
+    assert load_settings().database_url == "postgresql://neon/db"
 
 
 def test_load_settings_reads_ssm_when_prefix_set(aws, monkeypatch):
     monkeypatch.setenv("SSM_PREFIX", "/kessler/")
-    clear_env(monkeypatch, "DATABASE_URL", "ORIGIN_SECRET")
-    put_params({"DATABASE_URL": "postgresql://neon/db", "ORIGIN_SECRET": "s3cret"})
+    clear_env(monkeypatch, "DATABASE_URL")
+    put_params({"DATABASE_URL": "postgresql://neon/db"})
     settings = load_settings()
     assert settings.database_url == "postgresql://neon/db"
-    assert settings.origin_secret == "s3cret"
 
 
 def test_load_settings_without_prefix_touches_no_aws(monkeypatch):
