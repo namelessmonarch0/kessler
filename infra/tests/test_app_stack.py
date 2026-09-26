@@ -279,7 +279,7 @@ def test_deploy_role_may_call_the_api_url_for_smoke_tests(app_template):
         assert "ApiFunction" in json.dumps(g["FunctionName"])
 
 
-def test_cdk_json_caps_api_concurrency_and_starts_with_an_open_url():
+def test_cdk_json_caps_api_concurrency_and_enforces_iam():
     context = json.loads((Path(__file__).parents[1] / "cdk.json").read_text())["context"]
     assert context["api_reserved_concurrency"] == 10
-    assert context["api_url_auth"] == "NONE"
+    assert context["api_url_auth"] == "AWS_IAM"
