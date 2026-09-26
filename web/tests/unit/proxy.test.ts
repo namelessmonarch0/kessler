@@ -1,7 +1,7 @@
 import { format } from "node:util";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { awsCredentialsProvider } from "@vercel/oidc-aws-credentials-provider";
-import { proxyToApi, upstreamUrl, memoizeCredentials, type CredentialSource } from "@/lib/proxy";
+import { proxyToApi, upstreamUrl, memoizeCredentials, type CredentialSource, type ProxyEnv } from "@/lib/proxy";
 
 vi.mock("@vercel/oidc-aws-credentials-provider", () => ({ awsCredentialsProvider: vi.fn() }));
 
@@ -65,6 +65,16 @@ describe("proxyToApi", () => {
   it("omits the secret header when no secret is configured", async () => {
     const fetchImpl = vi.fn(async () => new Response("[]", { status: 200 }));
     await proxyToApi(new Request("http://site/api/events"), { API_ORIGIN_URL: "http://a" }, fetchImpl as unknown as typeof fetch);
+    const [, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
+    expect(new Headers(init.headers).get("x-origin-auth")).toBeNull();
+  });
+
+  it("omits the secret header even when a leftover ORIGIN_SECRET is still set in the environment", async () => {
+    // Production's process.env keeps ORIGIN_SECRET until it's removed from Vercel; the proxy
+    // must not read it any more (it was retired once IAM auth alone started protecting the origin).
+    const fetchImpl = vi.fn(async () => new Response("{}", { status: 200 }));
+    const env = { ...ENV, ORIGIN_SECRET: "s3cret" } as ProxyEnv;
+    await proxyToApi(new Request("http://site/api/meta"), env, fetchImpl as unknown as typeof fetch);
     const [, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
     expect(new Headers(init.headers).get("x-origin-auth")).toBeNull();
   });

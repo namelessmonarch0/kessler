@@ -63,13 +63,6 @@ def test_load_settings_requires_production_parameters(aws, monkeypatch):
         load_settings()
 
 
-def test_production_settings_no_longer_need_an_origin_secret(aws, monkeypatch):
-    monkeypatch.setenv("SSM_PREFIX", "/kessler/")
-    clear_env(monkeypatch, "DATABASE_URL")
-    put_params({"DATABASE_URL": "postgresql://neon/db"})
-    assert load_settings().database_url == "postgresql://neon/db"
-
-
 def test_load_settings_reads_ssm_when_prefix_set(aws, monkeypatch):
     monkeypatch.setenv("SSM_PREFIX", "/kessler/")
     clear_env(monkeypatch, "DATABASE_URL")

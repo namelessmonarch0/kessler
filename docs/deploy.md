@@ -133,7 +133,13 @@ cat ingest-out.json
 
 Then check that `ingest_runs` recorded both jobs via the API (see step 7 for the Function URL).
 The Function URL requires SigV4 signing (`api_url_auth = AWS_IAM` in `infra/cdk.json`) — see
-"Signed direct calls" under "Origin protection" below for the exact form:
+"Signed direct calls" under "Origin protection" below for the exact form. `aws login` (step 1)
+authenticates the CLI but does not export `$AWS_ACCESS_KEY_ID` etc. to the shell — the signed curl
+below needs them, so run this first (it prints nothing):
+
+```bash
+eval "$(aws configure export-credentials --format env)"
+```
 
 ```bash
 curl --aws-sigv4 "aws:amz:us-east-2:lambda" \
@@ -148,7 +154,9 @@ curl --aws-sigv4 "aws:amz:us-east-2:lambda" \
 database. AWS rejects every unsigned path, `/api/health` included, before the request ever
 reaches the app — the Function URL requires SigV4 signing (`api_url_auth = AWS_IAM` in
 `infra/cdk.json`; see "Signed direct calls" under "Origin protection" below for the exact
-`curl --aws-sigv4` form used here).
+`curl --aws-sigv4` form used here). If you started a fresh shell since running `eval "$(aws
+configure export-credentials --format env)"` above, run it again — `aws login` alone doesn't
+export those variables.
 
 ```bash
 URL=$(aws cloudformation describe-stacks --stack-name KesslerApp \
@@ -273,7 +281,14 @@ aws logs tail /aws/lambda/kessler-api --since 1d
 
 **Rollback:** redeploy `KesslerApp` with an older, known-good `image_tag` (a previous commit SHA
 still present in the ECR repository — it keeps the newest 10 images, i.e. the last 5 deploys,
-since each deploy pushes 2: `api-<sha>` and `jobs-<sha>`):
+since each deploy pushes 2: `api-<sha>` and `jobs-<sha>`).
+
+**Never roll the API or jobs image back past `8260607`** ("feat(api): stop requiring the origin
+secret — IAM auth protects the origin"). Once `/kessler/ORIGIN_SECRET` has been deleted (§12 step
+4), an image older than that fails at cold start with `RuntimeError: missing required SSM
+parameters: /kessler/ORIGIN_SECRET` — the API and every scheduled job go down. Before that
+deletion, once the proxy has stopped sending the header (§12 step 4), an older image 403s every
+data route instead, because it still enforces a secret the proxy no longer sends.
 
 ```bash
 cd infra
@@ -283,7 +298,9 @@ npx -y aws-cdk@2.1143.0 deploy KesslerApp --require-approval never \
 
 **After reverting the API** to a release from before globe generations: that release reads only the
 legacy `globe/LEO.bin.gz` and `globe/HIGH.bin.gz`, which the newer releases left in place but
-stopped updating. Run `ingest-gp` once so they are fresh:
+stopped updating. Run `ingest-gp` once so they are fresh. **Note:** once the origin secret has been
+retired (§12), this specific revert is no longer available — every pre-globe-generations release
+predates `8260607`, which the rollback limit above rules out:
 
 ```bash
 aws lambda invoke --function-name kessler-jobs --cli-binary-format raw-in-base64-out \
@@ -338,9 +355,10 @@ Full design: `docs/superpowers/specs/2026-09-25-origin-protection-design.md`.
 ### Rollout (four pushes)
 
 1. **This code, with `api_url_auth = NONE`.** Push to `main`; the deploy workflow's smoke test
-   signs `/api/health` and `/api/ready` with the deploy role's credentials (both expect 200) and
-   still checks that the origin secret guards `/api/meta` (403 unsigned). Then set `AWS_ROLE_ARN`
-   and redeploy (one-time setup above).
+   signs `/api/health` and `/api/ready` with the deploy role's credentials (both expect 200) and,
+   as it was then — before step 3 below retired the origin secret and the smoke test's check of it
+   — still checked that the origin secret guarded `/api/meta` (403 unsigned). Then set
+   `AWS_ROLE_ARN` and redeploy (one-time setup above).
 
    **Gate — do not start step 2 without this line.** A working site proves little yet: AWS
    doesn't validate signatures while the URL is `NONE`. Load the site, then find this line in the
@@ -425,6 +443,18 @@ Full design: `docs/superpowers/specs/2026-09-25-origin-protection-design.md`.
    **Rollback:** set `api_url_auth` back to `NONE` and push — but that deploy takes 10+ minutes,
    with no site data meanwhile. Faster, with your admin login (seconds):
 
+   Prefer a Vercel Instant Rollback (step 1's rollback, above) instead of this when the problem is
+   on the signing side (a broken `AWS_ROLE_ARN`, an expired OIDC trust, a bad Vercel deploy) — it's
+   faster and never touches the API's auth. Reach for `NONE` only when the Lambda side itself is
+   broken and can't wait 10+ minutes for a normal redeploy.
+
+   **After the origin secret's retirement (§12 steps 3–4), `NONE` is a bigger step than it once
+   was:** IAM auth is by then the *only* thing guarding the Function URL, so `NONE` leaves it with
+   no authentication at all — anyone who has the URL can call it, bypassing the Vercel WAF rate
+   limit (which only covers requests through `kessler.kudayyurter.dev`); only `kessler-api`'s
+   reserved concurrency of 10 limits the exposure. Return to `AWS_IAM` as soon as the emergency is
+   over.
+
    ```bash
    aws lambda update-function-url-config --function-name kessler-api --auth-type NONE \
      --invoke-mode RESPONSE_STREAM
@@ -435,36 +465,74 @@ Full design: `docs/superpowers/specs/2026-09-25-origin-protection-design.md`.
    ```
 
    Then push `api_url_auth` = `NONE` anyway, so CloudFormation matches again (until then, any
-   deploy from `main` re-applies `AWS_IAM`). Once that deploy is green, CloudFormation has added
-   its own public permissions; remove the two hand-made ones, so a later emergency can add them
-   again:
+   deploy from `main` re-applies `AWS_IAM`). **This push's `deploy.yml` run will show red** — the
+   smoke test unconditionally expects an unsigned `/api/health` request to return 403 (see
+   `.github/workflows/deploy.yml`'s Smoke test step), which `NONE` fails by design — even though
+   `cdk deploy` (the step right before it) already applied the config change. That failure is
+   expected in this emergency state; it does not mean the push failed to apply, but the state it
+   confirms still must be undone (returned to `AWS_IAM`) soon. Once `cdk deploy` has applied it,
+   CloudFormation has added its own public permissions; remove the two hand-made ones, so a later
+   emergency can add them again:
 
    ```bash
    aws lambda remove-permission --function-name kessler-api --statement-id public-url
    aws lambda remove-permission --function-name kessler-api --statement-id public-invoke
    ```
-3. **Push the commit that stops the API requiring the origin secret** (IAM auth alone protects
-   it now; the proxy keeps sending the header harmlessly until step 4). Wait for `deploy.yml` to
-   go green.
+3. **Push the commit that stops the API requiring the origin secret — alone, not the whole
+   branch.** (IAM auth alone protects it now; the proxy keeps sending the header harmlessly until
+   step 4.) Find its SHA and push only that commit to `main`:
 
-   With the owner's go-ahead, remove `ORIGIN_SECRET` from the Vercel project (Production) and
-   redeploy (see "One-time setup" above for the `vercel redeploy` form) — or skip the manual
-   redeploy, since step 4's push rebuilds the proxy without it either way:
+   ```bash
+   git log --oneline main..feat/retire-origin-secret   # find the "feat(api): stop requiring the origin secret" line
+   git push origin <that SHA>:main
+   ```
+
+   Then wait for that SHA's deploy run to go green before doing anything else:
+
+   ```bash
+   gh run list --workflow deploy.yml -L 1
+   ```
+
+   **Do not push the branch's remaining commit(s) yet, and don't let a habitual `git merge
+   --ff-only <branch> && git push` push both at once.** Doing that takes the site's data down for
+   about 10 minutes: Vercel builds the proxy commit (which stops sending `x-origin-auth`) in about
+   a minute, while the old API — still enforcing the secret for roughly 10 minutes until its own
+   deploy finishes — 403s every `/api/*` data route in that window.
+
+   Once green, with the owner's go-ahead, remove `ORIGIN_SECRET` from every Vercel environment it
+   exists in — the original setup added it to both Production and Preview, not just Production:
 
    ```bash
    cd web
-   npx vercel env rm ORIGIN_SECRET production --yes --scope kudayyurter
+   npx vercel env ls --scope kudayyurter        # lists every environment ORIGIN_SECRET is set in
+   npx vercel env rm ORIGIN_SECRET <environment> --scope kudayyurter   # repeat per environment listed
    cd ..
    ```
-4. **Push the commit that stops the proxy sending the secret.** Then, with the owner's admin
-   login, no secret value shown:
+
+   (redeploying now is optional — step 4's push rebuilds the proxy without it either way; if you
+   do want to redeploy immediately, see "One-time setup" above for the `vercel redeploy` form).
+4. **Push the rest of the branch — the commit that stops the proxy sending the secret (and
+   anything after it):**
+
+   ```bash
+   git push origin feat/retire-origin-secret:main
+   ```
+
+   If every commit here touches only `web/`, this push does not trigger a new `deploy.yml` run
+   (path filter) — there's no fresh smoke test to watch. Confirm instead that step 3's run is
+   still the latest green one, or check manually: unsigned `curl -s -o /dev/null -w
+   '%{http_code}\n' "${URL}api/health"` should already be `403` (IAM auth, unaffected by this
+   push). If a later commit also touches `api/` or `infra/` (e.g. an unrelated cleanup riding
+   along), `deploy.yml` runs again on this push too — then its own smoke test covers this check.
+
+   Then, with the owner's admin login, no secret value shown:
 
    ```bash
    aws ssm delete-parameter --name /kessler/ORIGIN_SECRET
    ```
 
-   Add the WAF rate-limit rule (below). Verify the site, the smoke test, and that the rule shows
-   up in `vercel firewall rules list`.
+   Add the WAF rate-limit rule (below). Verify the site loads, re-confirm the unsigned-403 check
+   above, and that the rule shows up in `vercel firewall rules list`.
 
    **Rollback:** remove the WAF rule (below); the secret removal itself needs no rollback once
    IAM is enforced — IAM is the protection.
@@ -504,8 +572,15 @@ cd ..
 
 Once `api_url_auth` is `AWS_IAM`, AWS rejects every unsigned request to the function URL,
 including `/api/health`. Sign with SigV4 using credentials from any principal the trust policy or
-the function's resource policy allows (the deploy role, or the Vercel role's own temporary
-credentials); `$URL` is the Function URL, as fetched in step 7:
+the function's resource policy allows — the deploy role, the Vercel role's own temporary
+credentials, or the owner's own admin credentials (allowed too, via the same-account identity
+policy, not only the deploy and Vercel roles); `$URL` is the Function URL, as fetched in step 7.
+`aws login` doesn't export `$AWS_ACCESS_KEY_ID`/`$AWS_SECRET_ACCESS_KEY`/`$AWS_SESSION_TOKEN` to
+the shell, so run this first (it prints nothing):
+
+```bash
+eval "$(aws configure export-credentials --format env)"
+```
 
 ```bash
 curl --aws-sigv4 "aws:amz:us-east-2:lambda" \
