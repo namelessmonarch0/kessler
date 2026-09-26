@@ -3,7 +3,6 @@ import { awsCredentialsProvider } from "@vercel/oidc-aws-credentials-provider";
 
 export type ProxyEnv = {
   API_ORIGIN_URL?: string;
-  ORIGIN_SECRET?: string;
   /** Enables SigV4 signing: the role Vercel's OIDC token is exchanged for (production only). */
   AWS_ROLE_ARN?: string;
   /** Region of the API's Lambda URL. Not AWS_REGION: Vercel's runtime sets that to its own region. */
@@ -129,8 +128,6 @@ export async function proxyToApi(
     const value = req.headers.get(name);
     if (value) headers.set(name, value);
   }
-  if (env.ORIGIN_SECRET) headers.set("x-origin-auth", env.ORIGIN_SECRET);
-
   const url = upstreamUrl(req.url, origin);
   let body: ArrayBuffer | undefined;
   try {

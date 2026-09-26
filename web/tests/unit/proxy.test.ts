@@ -5,7 +5,7 @@ import { proxyToApi, upstreamUrl, memoizeCredentials, type CredentialSource } fr
 
 vi.mock("@vercel/oidc-aws-credentials-provider", () => ({ awsCredentialsProvider: vi.fn() }));
 
-const ENV = { API_ORIGIN_URL: "http://api.local:8000/", ORIGIN_SECRET: "s3cret" };
+const ENV = { API_ORIGIN_URL: "http://api.local:8000/" };
 
 // The proxy logs to the console; keep test output quiet and let tests assert on the lines.
 beforeEach(() => {
@@ -32,7 +32,7 @@ describe("upstreamUrl", () => {
 });
 
 describe("proxyToApi", () => {
-  it("forwards GET with the origin secret and filters headers both ways", async () => {
+  it("forwards GET and filters headers both ways", async () => {
     const fetchImpl = vi.fn(async () =>
       new Response("{\"ok\":true}", {
         status: 200,
@@ -44,7 +44,7 @@ describe("proxyToApi", () => {
     const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
     const sent = new Headers(init.headers);
     expect(url).toBe("http://api.local:8000/api/meta");
-    expect(sent.get("x-origin-auth")).toBe("s3cret");
+    expect(sent.get("x-origin-auth")).toBeNull();
     expect(sent.get("cookie")).toBeNull();
     expect(res.status).toBe(200);
     expect(res.headers.get("cache-control")).toBe("public, s-maxage=3600");
@@ -75,7 +75,6 @@ describe("proxyToApi", () => {
     expect(res.status).toBe(502);
     expect(await res.json()).toEqual({ error: { code: "unavailable", message: "the data API is unreachable" } });
     expect(console.error).toHaveBeenCalledWith("proxy: upstream fetch failed: %s: %s", "TypeError", "fetch failed");
-    expect(logged().join("\n")).not.toContain(ENV.ORIGIN_SECRET);
   });
 
   it("returns 500 JSON when API_ORIGIN_URL is missing", async () => {
@@ -115,7 +114,7 @@ describe("proxyToApi", () => {
 
 const CREDS = { accessKeyId: "AKIDTEST", secretAccessKey: "secret-key-test", sessionToken: "token-123" };
 const SIGNED_ENV = { API_ORIGIN_URL: "https://abc.lambda-url.us-east-2.on.aws/", AWS_ROLE_ARN: "arn:aws:iam::1:role/kessler-vercel-api" };
-const SECRETS = [CREDS.accessKeyId, CREDS.secretAccessKey, CREDS.sessionToken, ENV.ORIGIN_SECRET];
+const SECRETS = [CREDS.accessKeyId, CREDS.secretAccessKey, CREDS.sessionToken];
 
 function okFetch() {
   return vi.fn(async () => Response.json({ ok: true }));
@@ -142,11 +141,11 @@ describe("signing", () => {
     expect(sent.get("x-amz-security-token")).toBe("token-123");
   });
 
-  it("signs the host, date, session token and origin secret headers", async () => {
+  it("signs the host, date and session token headers", async () => {
     const fetchImpl = okFetch();
-    await proxyToApi(new Request("http://site/api/meta"), { ...SIGNED_ENV, ORIGIN_SECRET: "s3cret" }, fetchImpl as unknown as typeof fetch, async () => CREDS);
+    await proxyToApi(new Request("http://site/api/meta"), SIGNED_ENV, fetchImpl as unknown as typeof fetch, async () => CREDS);
     const signed = /SignedHeaders=([^,]+)/.exec(sentAuthorization(fetchImpl))?.[1].split(";");
-    expect(signed).toEqual(expect.arrayContaining(["host", "x-amz-date", "x-amz-security-token", "x-origin-auth"]));
+    expect(signed).toEqual(expect.arrayContaining(["host", "x-amz-date", "x-amz-security-token"]));
   });
 
   it("signs the body: POSTs that differ only in their body get different signatures", async () => {
@@ -193,7 +192,7 @@ describe("signing", () => {
     const fetchImpl = vi.fn(async () => Response.json({ Message: "Forbidden" }, {
       status, headers: { "x-amzn-errortype": "AccessDeniedException" },
     }));
-    const res = await proxyToApi(new Request("http://site/api/meta"), { ...SIGNED_ENV, ORIGIN_SECRET: "s3cret" }, fetchImpl as unknown as typeof fetch, async () => CREDS);
+    const res = await proxyToApi(new Request("http://site/api/meta"), SIGNED_ENV, fetchImpl as unknown as typeof fetch, async () => CREDS);
     expect(res.status).toBe(status);
     expect(await res.json()).toEqual({ Message: "Forbidden" });
     expect(console.warn).toHaveBeenCalledWith("proxy: upstream rejected a signed request: %d %s", status, "AccessDeniedException");

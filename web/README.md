@@ -175,10 +175,10 @@ uv run python make_sgp4_vectors.py
 
 ## Deploying (Vercel)
 
-The Vercel project `kessler` builds this folder: **Root Directory** `web`, framework **Next.js**. It needs two environment variables (Production and Preview):
+The Vercel project `kessler` builds this folder: **Root Directory** `web`, framework **Next.js**. It needs these environment variables:
 
-- `API_ORIGIN_URL`: the `kessler-api` Lambda Function URL, without a trailing slash (CloudFormation output `KesslerApp.ApiFunctionUrl`).
-- `ORIGIN_SECRET`: the same value as SSM `/kessler/ORIGIN_SECRET`.
+- `API_ORIGIN_URL` (Production and Preview): the `kessler-api` Lambda Function URL, without a trailing slash (CloudFormation output `KesslerApp.ApiFunctionUrl`).
+- `AWS_ROLE_ARN` (Production only): the `kessler-vercel-api` role the proxy signs requests with — see "Signed requests to the origin" below.
 
 `vercel.json` pins functions to `cle1` (next to AWS us-east-2) and skips builds when nothing under `web/` changed since the last deployment.
 
